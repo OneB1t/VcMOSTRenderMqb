@@ -9,3 +9,8 @@ To run the code then execute
 This is what can be achieved for now
 
 https://github.com/jilleb/mib2-toolbox/assets/320479/d625360f-629a-4b98-9ecd-61b4ec68585a
+
+Now font can be scaled and also some new characters/icons appeared
+![image](https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/c8441ad3-1517-4c5d-b528-64e39deaae60)
+
+My next goal is to get some usefull data from exlap channel and render them
