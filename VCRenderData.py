@@ -4,7 +4,6 @@ import random
 import signal
 import struct
 import subprocess
-import threading
 import time
 
 start_time = time.time()  # Record the start time
@@ -20,7 +19,7 @@ def set_pixel(x, y):
         bit_offset = 7 - ((y * width + x) % 8)  # Invert the bit order for 1-bit BMP
         pixels[pixel_index] |= (1 << bit_offset)
 
-def draw_text(text, x, y, scale=2):
+def draw_text(text, x, y, scale=1):
     for char in text:  
         char_representation = get_char_representation(char)
         char_height = len(char_representation)
@@ -38,10 +37,6 @@ def draw_text(text, x, y, scale=2):
         x += char_width * scale  # Move to the next character, accounting for scaling
 
 
-
-
-
-# Define a simple 8x8 font for drawing text (customize as needed)
 # Define a simple 8x8 font for drawing text (ASCII characters)
 font = {
     ord(' '): [
@@ -359,23 +354,26 @@ execute_once = True
 while True:
 
     start_time = time.time()  # Record the start time
+    # Create a blank monochromatic image of size 1280x640 (all pixels initialized to 0)
+    pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
 
     # Define the text to be added
     random_value = random.randint(1, 100)
     text = "This is the first prototype of text rendering - {}".format(random_value)
-
-    # Create a blank monochromatic image of size 1280x640 (all pixels initialized to 0)
-    pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
-
-
+    textScale = 2
     # Calculate the position to center the text
-    text_x = (width - len(text) * 16) // 2  # Assuming 16 pixels per character
-    text_y = height // 2 - 16  # Assuming 16-pixel font height
-
+    text_x = (width - len(text) * 8 * textScale) // 2  # Assuming 16 pixels per character
+    text_y = height // 2 - 8  # Assuming 16-pixel font height
 
     # Draw the text on the image
-    draw_text(text, text_x, text_y)
-    draw_text(text, text_x, text_y + 20)
+    draw_text(text, text_x, text_y, textScale)
+
+    text2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>?/"
+    textScale = 1
+    text_x = (width - len(text2) * 8 * textScale) // 2  # Assuming 8 pixels per character
+    text_y = height // 2 - 8  # Assuming 8-pixel font height
+
+    draw_text(text2, text_x, text_y + 20,textScale)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack('<2sIHHI', b'BM', len(pixels) + 62, 0, 0, 62)
