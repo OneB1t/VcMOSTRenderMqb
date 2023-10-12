@@ -2,7 +2,9 @@
 Way to write custom data to Virtual cockpit for MQB platform
 
 To make this work you need to install Python3.3 to MIB2.5 first using following package repositories: https://pkgsrc.mibsolution.one then save current version of VCRenderData.py to sd card or upload it via winSCP
-To run the code then execute python3.3 /fs/sda0/VCRenderData.py
+To run the code then execute 
+
+# python3.3 /fs/sda0/VCRenderData.py
 
 This is what can be achieved for now
 
