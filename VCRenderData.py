@@ -9,6 +9,10 @@ import os
 
 start_time = time.time()  # Record the start time
 
+#setup
+width = 1280
+height = 640
+
 def run_command():
     # Start the process (replace 'your_command' with the actual command you want to run)
     process = subprocess.Popen('/eso/bin/apps/loadandshowimage /tmp/render.bmp', shell=True)
@@ -1002,10 +1006,27 @@ font = {
 def get_char_representation(char):
     return font.get(ord(char), [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
 
+def execute_dmdt_commands():
+    commandcontext = "/eso/bin/apps/dmdt sc 4 -9"
+    try:
+        subprocess.run(commandcontext, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Set context of display 4 failed with error: {e.returncode}")
+
+    time.sleep(2)
+
+    commandbuffer = "/eso/bin/apps/dmdt sb 0"
+    try:
+        subprocess.run(commandbuffer, shell=True, check=True)
+    except subprocess.CalledProcessError as e:
+        print(f"Switch buffer on display 0 failed with error: {e.returncode}")
+
 if platform.system() == "Windows":
     output_file = "render.bmp"
-else:  # Assuming it's Linux or other Unix-like systems
+else:  # Assuming we are on QNX
     output_file = "/tmp/render.bmp"
+
+execute_once = True
 while True:
 
     start_time = time.time()  # Record the start time
@@ -1015,8 +1036,6 @@ while True:
     text = "This is the first prototype of text rendering - {}".format(random_value)
 
     # Create a blank monochromatic image of size 1280x640 (all pixels initialized to 0)
-    width = 1280
-    height = 640
     pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
 
 
@@ -1048,19 +1067,23 @@ while True:
     elapsed_time = end_time - start_time
     print("Time taken to generate BMP: {:.6f} seconds".format(elapsed_time))
 
-
     # Command to run the external process (replace with your command)
     command = ["/eso/bin/apps/loadandshowimage /tmp/render.bmp"]
 
     # Start the external process
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True,
-                       preexec_fn=os.setsid)
+    if platform.system() != "Windows":
+        process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
 
     # Sleep for 2 seconds
     time.sleep(2)
 
     # Send a SIGINT signal to the process
-    os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    # Start the external process
+    if platform.system() != "Windows":
+        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+        # Wait for the process to finish
+        process.wait()
 
-    # Wait for the process to finish
-    process.wait()
+    if execute_once:
+        execute_dmdt_commands()
+        execute_once = False  # Set the control variable to False after execution
