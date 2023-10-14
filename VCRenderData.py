@@ -9,8 +9,8 @@ import signal
 start_time = time.time()  # Record the start time
 
 #setup final image size
-width = 1280
-height = 640
+width = 800
+height = 480
 
 # Function to set a pixel to white (255) at the specified coordinates
 def set_pixel(x, y):
@@ -112,7 +112,7 @@ execute_once = True
 while True:
 
     start_time = time.time()  # Record the start time
-    # Create a blank monochromatic image of size 1280x640 (all pixels initialized to 0)
+    # Create a blank monochromatic image of size 800x480 (all pixels initialized to 0)
     pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
 
     # Define the text to be added
