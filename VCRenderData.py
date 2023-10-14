@@ -63,7 +63,7 @@ font = {
     ord('t'): [0x10, 0x10, 0x3E, 0x10, 0x10, 0x12, 0x0C, 0x00],    ord('u'): [0x00, 0x00, 0x22, 0x22, 0x22, 0x22, 0x1E, 0x00],    ord('v'): [0x00, 0x00, 0x22, 0x22, 0x14, 0x14, 0x08, 0x00],    ord('w'): [0x00, 0x00, 0x41, 0x49, 0x49, 0x55, 0x36, 0x00],
     ord('x'): [0x00, 0x00, 0x22, 0x14, 0x08, 0x14, 0x22, 0x00],    ord('y'): [0x00, 0x00, 0x22, 0x22, 0x1C, 0x04, 0x18, 0x00],    ord('z'): [0x00, 0x00, 0x3E, 0x04, 0x08, 0x10, 0x3E, 0x00],    ord('{'): [0x0C, 0x10, 0x10, 0x20, 0x10, 0x10, 0x0C, 0x00],
     ord('|'): [0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('}'): [0x30, 0x08, 0x08, 0x04, 0x08, 0x08, 0x30, 0x00],    ord('~'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    ord('^'): [0x08, 0x14, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00],
-    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('⬆'): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('⬇'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
+    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('â¬†'): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('â¬‡'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
 }
 
 
@@ -74,18 +74,18 @@ def execute_dmdt_commands():
     commandcontext = "/eso/bin/apps/dmdt sc 4 -9"
     try:
         print("Executing '{}'".format(commandcontext))
-        subprocess.run(commandcontext, shell=True, check=True)
+        subprocess.Popen(commandcontext, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print(f"Set context of display 4 failed with error: {e.returncode}")
+        print("Set context of display 4 failed with error: " + {e.returncode})
 
     time.sleep(2)
 
     commandbuffer = "/eso/bin/apps/dmdt sb 0"
     try:
         print("Executing '{}'".format(commandbuffer))
-        subprocess.run(commandbuffer, shell=True, check=True)
+        subprocess.Popen(commandbuffer, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print(f"Switch buffer on display 0 failed with error: {e.returncode}")
+        print("Switch buffer on display 0 failed with error:" +  {e.returncode})
 
 if platform.system() == "Windows":
     output_file = "render.bmp"
@@ -110,14 +110,14 @@ while True:
     # Draw the text on the image
     draw_text(text, text_x, text_y, textScale)
 
-    text2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>⬆⬇?/^"
+    text2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>â¬†â¬‡?/^"
     textScale = 1
     text_x = (width - len(text2) * 8 * textScale) // 2  # Assuming 8 pixels per character
     text_y = height // 2 - 8  # Assuming 8-pixel font height
 
     draw_text(text2, text_x, text_y + 20, textScale)
 
-    text3 = "⬆ 3 KM"
+    text3 = "â¬† 3 KM"
     textScale = 10
     text_x = (width - len(text3) * 8 * textScale) // 2  # Assuming 8 pixels per character
     text_y = height // 2 - 8  # Assuming 8-pixel font height
