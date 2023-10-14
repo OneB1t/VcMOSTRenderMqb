@@ -71,6 +71,14 @@ def get_char_representation(char):
     return font.get(ord(char), [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
 
 def execute_dmdt_commands():
+    commandslay = "/bin/slay loadandshowimage"
+    try:
+        print("Executing '{}'".format(commandslay))
+        subprocess.Popen(commandslay, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+    except subprocess.CalledProcessError as e:
+        print("Kill all runnnig loadandshowimage: " + {e.returncode})
+
+
     commandcontext = "/eso/bin/apps/dmdt sc 4 -9"
     try:
         print("Executing '{}'".format(commandcontext))
@@ -86,6 +94,14 @@ def execute_dmdt_commands():
         subprocess.Popen(commandbuffer, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
         print("Switch buffer on display 0 failed with error:" +  {e.returncode})
+
+    commandbuffer2 = "/eso/bin/apps/dmdt sc 0 71"
+    try:
+        print("Executing '{}'".format(commandbuffer2))
+        subprocess.Popen(commandbuffer2, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+    except subprocess.CalledProcessError as e:
+        print("Switch buffer on display 0 failed with error:" +  {e.returncode})
+
 
 if platform.system() == "Windows":
     output_file = "render.bmp"
@@ -117,7 +133,7 @@ while True:
 
     draw_text(text2, text_x, text_y + 20, textScale)
 
-    text3 = "â¬† 3 KM"
+    text3 = "â¬†" + format(random_value) + "KM"
     textScale = 10
     text_x = (width - len(text3) * 8 * textScale) // 2  # Assuming 8 pixels per character
     text_y = height // 2 - 8  # Assuming 8-pixel font height
