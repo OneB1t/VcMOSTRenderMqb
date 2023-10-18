@@ -5,12 +5,26 @@ import random
 import struct
 import os
 import signal
+import socket
+import codecs
+from hashlib import sha256
+import xml.etree.ElementTree as ET
 
 start_time = time.time()  # Record the start time
 
 #setup final image size
 width = 800
 height = 480
+
+# Exlap
+HOST = '127.0.0.1'  # The server's hostname or IP address
+PORT = 25010  # The port used by the server
+username = "RSE_3-DE1400"
+password = "KozPo8iE0j72pkbWXKcP0QihpxgML3Opp8fNJZ0wN24="
+
+# Requests
+reqCapabilities = "<Req id='105'><Protocol version='1' returnCapabilities='true'/></Req>"
+reqDir = "<Req id='109'><Dir urlPattern='*' fromEntry='1' numOfEntries='999999999'/></Req>"
 
 # Function to set a pixel to white (255) at the specified coordinates
 def set_pixel(x, y):
@@ -63,7 +77,7 @@ font = {
     ord('t'): [0x10, 0x10, 0x3E, 0x10, 0x10, 0x12, 0x0C, 0x00],    ord('u'): [0x00, 0x00, 0x22, 0x22, 0x22, 0x22, 0x1E, 0x00],    ord('v'): [0x00, 0x00, 0x22, 0x22, 0x14, 0x14, 0x08, 0x00],    ord('w'): [0x00, 0x00, 0x41, 0x49, 0x49, 0x55, 0x36, 0x00],
     ord('x'): [0x00, 0x00, 0x22, 0x14, 0x08, 0x14, 0x22, 0x00],    ord('y'): [0x00, 0x00, 0x22, 0x22, 0x1C, 0x04, 0x18, 0x00],    ord('z'): [0x00, 0x00, 0x3E, 0x04, 0x08, 0x10, 0x3E, 0x00],    ord('{'): [0x0C, 0x10, 0x10, 0x20, 0x10, 0x10, 0x0C, 0x00],
     ord('|'): [0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('}'): [0x30, 0x08, 0x08, 0x04, 0x08, 0x08, 0x30, 0x00],    ord('~'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    ord('^'): [0x08, 0x14, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00],
-    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('â¬†'): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('â¬‡'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
+    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('†'): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('‡'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
 }
 
 
@@ -108,6 +122,44 @@ if platform.system() == "Windows":
 else:  # Assuming we are on QNX
     output_file = "/tmp/render.bmp"
 
+def send_and_print_response(request):
+    print(request)
+    command = request.encode("UTF-8")
+    s.send(command)
+    time.sleep(1)
+    resp = s.recv(3000)
+    print(resp.decode())
+    return resp.decode()
+
+def make_subscribe_request(query):
+    requestID =100
+    requestID += 1
+    request =  "<Req id='" + str(requestID) + "'><Subscribe url='" + query + "'/></Req>"
+    return (request)
+
+def authenticate():
+    XMLdata = ET.fromstring(send_and_print_response("<Req id='106'><Authenticate phase='challenge'/></Req>"))
+    challengeNonce = XMLdata.find('./Challenge').attrib['nonce']
+    cnonce = "mwIu24FMls5goqJE1estsg==" #not exactly random, but who's asking ;)
+    encoding_string = username + ":" + password + ":" + challengeNonce + ":" + cnonce
+    digest = (codecs.encode(codecs.decode(sha256(encoding_string.encode('utf-8')).hexdigest(), 'hex'),'base64').decode()).rstrip()
+    reqAuthenticateChallenge = "<Req id='3'><Authenticate phase='response' cnonce='" + cnonce + "' digest='" + digest + "' user='" + username + "'/></Req>"
+    send_and_print_response(reqAuthenticateChallenge)
+
+# connect to the host
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect((HOST, PORT))
+
+# first, ask what is possible
+print("Requesting capabilities.\n")
+send_and_print_response(reqCapabilities)
+
+# second, authenticate
+print("Requesting authentication.\n")
+authenticate()
+
+
+
 execute_once = True
 while True:
 
@@ -115,37 +167,12 @@ while True:
     # Create a blank monochromatic image of size 800x480 (all pixels initialized to 0)
     pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
 
-    # Define the text to be added
-    random_value = random.randint(1, 100)
-    text = "This is the first prototype of text rendering - {}".format(random_value)
+    text = "Oil Level: " + send_and_print_response(make_subscribe_request("oilLevel"))
     textScale = 2
-    # Calculate the position to center the text
-    text_x = (width - len(text) * 8 * textScale) // 2  # Assuming 16 pixels per character
-    text_y = height // 2 - 8  # Assuming 16-pixel font height
+    text_x = (width - len(text) * 8 * textScale) // 2  # Assuming 8 pixels per character
+    text_y = height // 2 - 8  # Assuming 8-pixel font height
 
-    # Draw the text on the image
     draw_text(text, text_x, text_y, textScale)
-
-    text2 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!@#$%^&*()-_=+[]{}|;:,.<>â¬†â¬‡?/^"
-    textScale = 1
-    text_x = (width - len(text2) * 8 * textScale) // 2  # Assuming 8 pixels per character
-    text_y = height // 2 - 8  # Assuming 8-pixel font height
-
-    draw_text(text2, text_x, text_y + 20, textScale)
-
-    text3 = "â¬†" + format(random_value) + "KM"
-    textScale = 10
-    text_x = (width - len(text3) * 8 * textScale) // 2  # Assuming 8 pixels per character
-    text_y = height // 2 - 8  # Assuming 8-pixel font height
-
-    draw_text(text3, text_x, text_y + 50, textScale)
-
-    text4 = "Battery voltage: 13.1V"
-    textScale = 2
-    text_x = (width - len(text4) * 8 * textScale) // 2  # Assuming 8 pixels per character
-    text_y = height // 2 - 8  # Assuming 8-pixel font height
-
-    draw_text(text4, text_x, text_y - 30, textScale)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack('<2sIHHI', b'BM', len(pixels) + 62, 0, 0, 62)
@@ -187,5 +214,6 @@ while True:
         process.wait()
 
     if execute_once:
-        execute_dmdt_commands()
+        if platform.system() != "Windows":
+            execute_dmdt_commands()
         execute_once = False  # Set the control variable to False after execution
