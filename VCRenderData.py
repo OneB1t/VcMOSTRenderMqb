@@ -1,30 +1,35 @@
 import platform
 import subprocess
 import time
-import random
 import struct
 import os
 import signal
 import socket
-import codecs
-from hashlib import sha256
-import xml.etree.ElementTree as ET
 
-start_time = time.time()  # Record the start time
+start_time = time.time ()  # Record the start time
 
-#setup final image size
+# setup final image size
 width = 800
 height = 480
 
-# Exlap
-HOST = '127.0.0.1'  # The server's hostname or IP address
-PORT = 25010  # The port used by the server
-username = "RSE_3-DE1400"
-password = "KozPo8iE0j72pkbWXKcP0QihpxgML3Opp8fNJZ0wN24="
+# Data Position
+driveLevelPos = "1304:211"
+nightModePos = "1304:212"
+distancePos = "1304:213"
+gearPos = "1304:214"
+fuelLevelLowPos = "1304:215"
+speedPos = "1304:216"
+satellitesInViewPos = "1304:217"
+satellitesInUsePos = "1304:218"
+gpsLatPos = "1304:219"
+gpsLongPos = "1304:220"
+gpsAccPos = "1304:221"
+gpsAltPos = "1304:222"
+gpsSpeedPos = "1304:223"
+gpsBearingPos = "1304:224"
+parkingBrakePos = "1304:225"
+gpsTimestampPos = "1304:226"
 
-# Requests
-reqCapabilities = "<Req id='105'><Protocol version='1' returnCapabilities='true'/></Req>"
-reqDir = "<Req id='109'><Dir urlPattern='*' fromEntry='1' numOfEntries='999999999'/></Req>"
 
 # Function to set a pixel to white (255) at the specified coordinates
 def set_pixel(x, y):
@@ -33,25 +38,26 @@ def set_pixel(x, y):
         bit_offset = 7 - ((y * width + x) % 8)  # Invert the bit order for 1-bit BMP
         pixels[pixel_index] |= (1 << bit_offset)
 
-def draw_text(text, x, y, scale=1):
+
+def prepare_text(text, x, y, scale=1):
     for char in text:
-        char_representation = get_char_representation(char)
-        char_height = len(char_representation)
+        char_representation = get_char_representation (char)
+        char_height = len (char_representation)
         char_width = 8  # Assuming a fixed width of 8 for each character
 
-        for row in reversed(range(char_height)):
-            for col in reversed(range(char_width)):
+        for row in reversed (range (char_height)):
+            for col in reversed (range (char_width)):
                 pixel = char_representation[row] & (1 << col)
                 if pixel != 0:
                     # Scale the pixel coordinates by 'scale' to make the character bigger
-                    for i in range(scale):
-                        for j in range(scale):
-                            set_pixel(x + (char_width - col - 1) * scale + i, y + (char_height - row - 1) * scale + j)
+                    for i in range (scale):
+                        for j in range (scale):
+                            set_pixel (x + (char_width - col - 1) * scale + i, y + (char_height - row - 1) * scale + j)
 
         x += char_width * scale  # Move to the next character, accounting for scaling
 
 
-# Define a simple 8x8 font for drawing text (ASCII characters)
+# Define a simple 8x8 font for prepareing text (ASCII characters)
 font = {
     ord(' '): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    ord('!'): [0x0C, 0x0C, 0x0C, 0x0C, 0x0C, 0x00, 0x0C, 0x00],    ord('"'): [0x14, 0x14, 0x14, 0x00, 0x00, 0x00, 0x00, 0x00],    ord('#'): [0x14, 0x7E, 0x14, 0x14, 0x7E, 0x14, 0x14, 0x00],
     ord('$'): [0x1C, 0xAC, 0xB0, 0x1C, 0x0C, 0xAC, 0x1C, 0x00],    ord('%'): [0xC2, 0xC4, 0x08, 0x10, 0x20, 0x46, 0x82, 0x00],    ord('&'): [0x0C, 0x48, 0x0C, 0x36, 0x4A, 0x32, 0x74, 0x00],    ord('\''): [0x0C, 0x0C, 0x0C, 0x00, 0x00, 0x00, 0x00, 0x00],
@@ -82,138 +88,155 @@ font = {
 
 
 def get_char_representation(char):
-    return font.get(ord(char), [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
+    return font.get (ord (char),
+                     [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
+
 
 def execute_dmdt_commands():
     commandslay = "/bin/slay loadandshowimage"
     try:
-        print("Executing '{}'".format(commandslay))
-        subprocess.Popen(commandslay, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        print ("Executing '{}'".format (commandslay))
+        subprocess.Popen (commandslay, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print("Kill all runnnig loadandshowimage: " + {e.returncode})
-
+        print ("Kill all runnnig loadandshowimage: " + {e.returncode})
 
     commandcontext = "/eso/bin/apps/dmdt sc 4 -9"
     try:
-        print("Executing '{}'".format(commandcontext))
-        subprocess.Popen(commandcontext, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        print ("Executing '{}'".format (commandcontext))
+        subprocess.Popen (commandcontext, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print("Set context of display 4 failed with error: " + {e.returncode})
+        print ("Set context of display 4 failed with error: " + {e.returncode})
 
-    time.sleep(2)
+    time.sleep (2)
 
     commandbuffer = "/eso/bin/apps/dmdt sb 0"
     try:
-        print("Executing '{}'".format(commandbuffer))
-        subprocess.Popen(commandbuffer, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        print ("Executing '{}'".format (commandbuffer))
+        subprocess.Popen (commandbuffer, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print("Switch buffer on display 0 failed with error:" +  {e.returncode})
+        print ("Switch buffer on display 0 failed with error:" + {e.returncode})
 
     commandbuffer2 = "/eso/bin/apps/dmdt sc 0 71"
     try:
-        print("Executing '{}'".format(commandbuffer2))
-        subprocess.Popen(commandbuffer2, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        print ("Executing '{}'".format (commandbuffer2))
+        subprocess.Popen (commandbuffer2, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
     except subprocess.CalledProcessError as e:
-        print("Switch buffer on display 0 failed with error:" +  {e.returncode})
+        print ("Switch buffer on display 0 failed with error:" + {e.returncode})
 
 
-if platform.system() == "Windows":
+def read_data(position):
+    command = ""
+    if platform.system () == "Windows":
+        return "0"
+    else:  # Assuming we are on QNX
+        command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:" + position
+
+    try:
+        process = subprocess.Popen (command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        output, _ = process.communicate ()
+        return output.decode ('utf-8')  # Decode the binary output to a string
+
+    except subprocess.CalledProcessError as e:
+        print ("Error: " + str (e.returncode))
+        return "0"
+
+
+if platform.system () == "Windows":
     output_file = "render.bmp"
 else:  # Assuming we are on QNX
     output_file = "/tmp/render.bmp"
 
-def send_and_print_response(request):
-    print(request)
-    command = request.encode("UTF-8")
-    s.send(command)
-    time.sleep(1)
-    resp = s.recv(3000)
-    print(resp.decode())
-    return resp.decode()
+def draw_text(text, x, y, scale=1):
+    for char in text:
+        char_representation = get_char_representation(char)
+        char_height = len (char_representation)
+        char_width = 8  # Assuming a fixed width of 8 for each character
 
-def make_subscribe_request(query):
-    requestID =100
-    requestID += 1
-    request =  "<Req id='" + str(requestID) + "'><Subscribe url='" + query + "'/></Req>"
-    return (request)
+        for row in reversed (range (char_height)):
+            for col in reversed (range (char_width)):
+                pixel = char_representation[row] & (1 << col)
+                if pixel != 0:
+                    # Scale the pixel coordinates by 'scale' to make the character bigger
+                    for i in range(scale):
+                        for j in range(scale):
+                            set_pixel(x + (char_width - col - 1) * scale + i, y + (char_height - row - 1) * scale + j)
 
-def authenticate():
-    XMLdata = ET.fromstring(send_and_print_response("<Req id='106'><Authenticate phase='challenge'/></Req>"))
-    challengeNonce = XMLdata.find('./Challenge').attrib['nonce']
-    cnonce = "mwIu24FMls5goqJE1estsg==" #not exactly random, but who's asking ;)
-    encoding_string = username + ":" + password + ":" + challengeNonce + ":" + cnonce
-    digest = (codecs.encode(codecs.decode(sha256(encoding_string.encode('utf-8')).hexdigest(), 'hex'),'base64').decode()).rstrip()
-    reqAuthenticateChallenge = "<Req id='3'><Authenticate phase='response' cnonce='" + cnonce + "' digest='" + digest + "' user='" + username + "'/></Req>"
-    send_and_print_response(reqAuthenticateChallenge)
+        x += char_width * scale  # Move to the next character, accounting for scaling
 
-# connect to the host
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect((HOST, PORT))
 
-# first, ask what is possible
-print("Requesting capabilities.\n")
-send_and_print_response(reqCapabilities)
+def prepare_text(text, textScale, width, height, offsetx, offsety):
+    text_x = (width - len (text) * 8 * textScale) // 2  # Assuming 8 pixels per character
+    text_y = height // 2 - 8  # Assuming 8-pixel font height
 
-# second, authenticate
-print("Requesting authentication.\n")
-authenticate()
-
+    draw_text (text, text_x + offsetx, text_y + offsety, textScale)
 
 
 execute_once = True
 while True:
 
-    start_time = time.time()  # Record the start time
+    start_time = time.time ()  # Record the start time
     # Create a blank monochromatic image of size 800x480 (all pixels initialized to 0)
-    pixels = bytearray([0] * (width * height // 8))  # 1 byte per 8 pixels
+    pixels = bytearray ([0] * (width * height // 8))  # 1 byte per 8 pixels
 
-    text = "Oil Level: " + send_and_print_response(make_subscribe_request("oilLevel"))
-    textScale = 2
-    text_x = (width - len(text) * 8 * textScale) // 2  # Assuming 8 pixels per character
-    text_y = height // 2 - 8  # Assuming 8-pixel font height
+    # Left column
+    prepare_text("Drive level: " + read_data(driveLevelPos), 2, width, height, -180, 0)
+    prepare_text("Night mode : " + read_data(nightModePos), 2, width, height, -180, 30)
+    prepare_text("Distance   : " + read_data(distancePos), 2, width, height, -180, 60)
+    prepare_text("Gear       : " + read_data(gearPos), 2, width, height, -180, 90)
+    prepare_text("Fuel low   : " + read_data(fuelLevelLowPos), 2, width, height, -180, 120)
+    prepare_text("Speed      : " + read_data(speedPos), 2, width, height, -180, 150)
+    prepare_text("Sat in view: " + read_data(satellitesInViewPos), 2, width, height, -180, 180)
+    prepare_text("Sat in use : " + read_data(satellitesInUsePos), 2, width, height, -180, 210)
 
-    draw_text(text, text_x, text_y, textScale)
+    # Right column
+    prepare_text("GPS lat    : " + read_data(gpsLatPos), 2, width, height, 180, 0)
+    prepare_text("GPS long   : " + read_data(gpsLongPos), 2, width, height, 180, 30)
+    prepare_text("GPS acc    : " + read_data(gpsAccPos), 2, width, height, 180, 60)
+    prepare_text("GPS alt    : " + read_data(gpsAltPos), 2, width, height, 180, 90)
+    prepare_text("GPS speed  : " + read_data(gpsSpeedPos), 2, width, height, 180, 120)
+    prepare_text("GPS bear   : " + read_data(gpsBearingPos), 2, width, height, 180, 150)
+    prepare_text("Park brake : " + read_data(parkingBrakePos), 2, width, height, 180, 180)
+    prepare_text("GPS time   : " + read_data(gpsTimestampPos), 2, width, height, 180, 210)
 
     # BMP header for a monochromatic (1-bit) BMP
-    bmp_header = struct.pack('<2sIHHI', b'BM', len(pixels) + 62, 0, 0, 62)
+    bmp_header = struct.pack ('<2sIHHI', b'BM', len (pixels) + 62, 0, 0, 62)
 
     # Bitmap info header
-    bmp_info_header = struct.pack('<IiiHHIIIIII', 40, width, height, 1, 1, 0, len(pixels), 0, 2, 2, 0)
+    bmp_info_header = struct.pack ('<IiiHHIIIIII', 40, width, height, 1, 1, 0, len (pixels), 0, 2, 2, 0)
 
     # Color palette for monochromatic BMP (black and white)
-    color_palette = struct.pack('<II', 0x00000000, 0x00FFFFFF)
+    color_palette = struct.pack ('<II', 0x00000000, 0x00FFFFFF)
 
     # Create and save the BMP file
-    with open(output_file, 'wb') as bmp_file:
-        bmp_file.write(bmp_header)
-        bmp_file.write(bmp_info_header)
-        bmp_file.write(color_palette)
-        bmp_file.write(pixels)
+    with open (output_file, 'wb') as bmp_file:
+        bmp_file.write (bmp_header)
+        bmp_file.write (bmp_info_header)
+        bmp_file.write (color_palette)
+        bmp_file.write (pixels)
 
-    end_time = time.time()  # Record the end time
+    end_time = time.time ()  # Record the end time
     elapsed_time = end_time - start_time
-    print("Time taken to generate BMP to path '{}' is {:.6f} seconds".format(output_file, elapsed_time))
-
+    print ("Time taken to generate BMP to path '{}' is {:.6f} seconds".format (output_file, elapsed_time))
 
     # Command to run the external process (replace with your command)
     command = ["/eso/bin/apps/loadandshowimage /tmp/render.bmp"]
 
     # Start the external process
-    if platform.system() != "Windows":
-        print("Executing '{}'".format(command))
-        process = subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+    if platform.system () != "Windows":
+        print ("Executing '{}'".format (command))
+        process = subprocess.Popen (command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
 
     # Sleep for 2 seconds
-    time.sleep(2)
+    time.sleep (2)
 
     # Send a SIGINT signal to the process
     # Start the external process
-    if platform.system() != "Windows":
-        os.killpg(os.getpgid(process.pid), signal.SIGTERM)
+    if platform.system () != "Windows":
+        os.killpg (os.getpgid (process.pid), signal.SIGTERM)
         # Wait for the process to finish
-        process.wait()
+        process.wait ()
 
     if execute_once:
-        if platform.system() != "Windows":
-            execute_dmdt_commands()
+        if platform.system () != "Windows":
+            execute_dmdt_commands ()
         execute_once = False  # Set the control variable to False after execution
