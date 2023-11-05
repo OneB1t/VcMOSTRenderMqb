@@ -83,7 +83,7 @@ font = {
     ord('t'): [0x10, 0x10, 0x3E, 0x10, 0x10, 0x12, 0x0C, 0x00],    ord('u'): [0x00, 0x00, 0x22, 0x22, 0x22, 0x22, 0x1E, 0x00],    ord('v'): [0x00, 0x00, 0x22, 0x22, 0x14, 0x14, 0x08, 0x00],    ord('w'): [0x00, 0x00, 0x41, 0x49, 0x49, 0x55, 0x36, 0x00],
     ord('x'): [0x00, 0x00, 0x22, 0x14, 0x08, 0x14, 0x22, 0x00],    ord('y'): [0x00, 0x00, 0x22, 0x22, 0x1C, 0x04, 0x18, 0x00],    ord('z'): [0x00, 0x00, 0x3E, 0x04, 0x08, 0x10, 0x3E, 0x00],    ord('{'): [0x0C, 0x10, 0x10, 0x20, 0x10, 0x10, 0x0C, 0x00],
     ord('|'): [0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('}'): [0x30, 0x08, 0x08, 0x04, 0x08, 0x08, 0x30, 0x00],    ord('~'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00],    ord('^'): [0x08, 0x14, 0x22, 0x00, 0x00, 0x00, 0x00, 0x00],
-    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('†'): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('‡'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
+    ord('_'): [0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3E],    ord('â€ '): [0x08, 0x1C, 0x2A, 0x08, 0x08, 0x08, 0x08, 0x00],    ord('â€ˇ'): [0x08, 0x08, 0x08, 0x08, 0x2A, 0x1C, 0x08, 0x00]
 }
 
 
@@ -179,24 +179,24 @@ while True:
     pixels = bytearray ([0] * (width * height // 8))  # 1 byte per 8 pixels
 
     # Left column
-    prepare_text("Drive level: " + read_data(driveLevelPos), 2, width, height, -180, 0)
-    prepare_text("Night mode : " + read_data(nightModePos), 2, width, height, -180, 30)
-    prepare_text("Distance   : " + read_data(distancePos), 2, width, height, -180, 60)
-    prepare_text("Gear       : " + read_data(gearPos), 2, width, height, -180, 90)
-    prepare_text("Fuel low   : " + read_data(fuelLevelLowPos), 2, width, height, -180, 120)
-    prepare_text("Speed      : " + read_data(speedPos), 2, width, height, -180, 150)
-    prepare_text("Sat in view: " + read_data(satellitesInViewPos), 2, width, height, -180, 180)
-    prepare_text("Sat in use : " + read_data(satellitesInUsePos), 2, width, height, -180, 210)
+    prepare_text("Drive level: " + read_data(driveLevelPos), 2, width, height, -150, -60)
+    prepare_text("Night mode : " + read_data(nightModePos), 2, width, height, -150, -30)
+    prepare_text("Distance   : " + read_data(distancePos), 2, width, height, -150, 0)
+    prepare_text("Gear       : " + read_data(gearPos), 2, width, height, -150, 30)
+    prepare_text("Fuel low   : " + read_data(fuelLevelLowPos), 2, width, height, -150, 60)
+    prepare_text("Speed      : " + read_data(speedPos), 2, width, height, -150, 90)
+    prepare_text("Sat in view: " + read_data(satellitesInViewPos), 2, width, height, -150, 120)
+    prepare_text("Sat in use : " + read_data(satellitesInUsePos), 2, width, height, -150, 150)
 
     # Right column
-    prepare_text("GPS lat    : " + read_data(gpsLatPos), 2, width, height, 180, 0)
-    prepare_text("GPS long   : " + read_data(gpsLongPos), 2, width, height, 180, 30)
-    prepare_text("GPS acc    : " + read_data(gpsAccPos), 2, width, height, 180, 60)
-    prepare_text("GPS alt    : " + read_data(gpsAltPos), 2, width, height, 180, 90)
-    prepare_text("GPS speed  : " + read_data(gpsSpeedPos), 2, width, height, 180, 120)
-    prepare_text("GPS bear   : " + read_data(gpsBearingPos), 2, width, height, 180, 150)
-    prepare_text("Park brake : " + read_data(parkingBrakePos), 2, width, height, 180, 180)
-    prepare_text("GPS time   : " + read_data(gpsTimestampPos), 2, width, height, 180, 210)
+    prepare_text("GPS lat    : " + read_data(gpsLatPos), 2, width, height, 150, -60)
+    prepare_text("GPS long   : " + read_data(gpsLongPos), 2, width, height, 150, -30)
+    prepare_text("GPS acc    : " + read_data(gpsAccPos), 2, width, height, 150, 0)
+    prepare_text("GPS alt    : " + read_data(gpsAltPos), 2, width, height, 150, 30)
+    prepare_text("GPS speed  : " + read_data(gpsSpeedPos), 2, width, height, 150, 60)
+    prepare_text("GPS bear   : " + read_data(gpsBearingPos), 2, width, height, 150, 90)
+    prepare_text("Park brake : " + read_data(parkingBrakePos), 2, width, height, 150, 120)
+    prepare_text("GPS time   : " + read_data(gpsTimestampPos), 2, width, height, 150, 150)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack ('<2sIHHI', b'BM', len (pixels) + 62, 0, 0, 62)
