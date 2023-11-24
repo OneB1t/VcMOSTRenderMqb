@@ -13,22 +13,22 @@ width = 800
 height = 480
 
 # Data Position
-driveLevelPos = "1304:211"
-nightModePos = "1304:212"
-distancePos = "1304:213"
-gearPos = "1304:214"
-fuelLevelLowPos = "1304:215"
-speedPos = "1304:216"
-satellitesInViewPos = "1304:217"
-satellitesInUsePos = "1304:218"
-gpsLatPos = "1304:219"
-gpsLongPos = "1304:220"
-gpsAccPos = "1304:221"
-gpsAltPos = "1304:222"
-gpsSpeedPos = "1304:223"
-gpsBearingPos = "1304:224"
-parkingBrakePos = "1304:225"
-gpsTimestampPos = "1304:226"
+driveLevelPos = "i:1304:211"
+nightModePos = "i:1304:212"
+distancePos = "i:1304:213"
+gearPos = "i:1304:214"
+fuelLevelLowPos = "i:1304:215"
+speedPos = "i:1304:216"
+satellitesInViewPos = "i:1304:217"
+satellitesInUsePos = "i:1304:218"
+gpsLatPos = "i:1304:219"
+gpsLongPos = "i:1304:220"
+gpsAccPos = "i:1304:221"
+gpsAltPos = "i:1304:222"
+gpsSpeedPos = "i:1304:223"
+gpsBearingPos = "i:1304:224"
+parkingBrakePos = "i:1304:225"
+gpsTimestampPos = "s:1304:226"
 
 
 # Function to set a pixel to white (255) at the specified coordinates
@@ -129,11 +129,12 @@ def read_data(position):
     if platform.system () == "Windows":
         return "0"
     else:  # Assuming we are on QNX
-        command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:" + position
+        command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc " + position
 
     try:
         process = subprocess.Popen (command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-        output, _ = process.communicate ()
+        output, _ = process.communicate()
+        print(output)
         return output.decode ('utf-8')  # Decode the binary output to a string
 
     except subprocess.CalledProcessError as e:
@@ -179,24 +180,24 @@ while True:
     pixels = bytearray ([0] * (width * height // 8))  # 1 byte per 8 pixels
 
     # Left column
-    prepare_text("Drive level: " + read_data(driveLevelPos), 2, width, height, -150, -60)
-    prepare_text("Night mode : " + read_data(nightModePos), 2, width, height, -150, -30)
-    prepare_text("Distance   : " + read_data(distancePos), 2, width, height, -150, 0)
-    prepare_text("Gear       : " + read_data(gearPos), 2, width, height, -150, 30)
-    prepare_text("Fuel low   : " + read_data(fuelLevelLowPos), 2, width, height, -150, 60)
-    prepare_text("Speed      : " + read_data(speedPos), 2, width, height, -150, 90)
-    prepare_text("Sat in view: " + read_data(satellitesInViewPos), 2, width, height, -150, 120)
-    prepare_text("Sat in use : " + read_data(satellitesInUsePos), 2, width, height, -150, 150)
+    prepare_text("Drive l.: " + read_data(driveLevelPos)[0:3], 2, width, height, -150, -60)
+    prepare_text("Night m.: " + read_data(nightModePos)[0:3], 2, width, height, -150, -30)
+    prepare_text("Distance: " + read_data(distancePos)[0:3], 2, width, height, -150, 0)
+    prepare_text("Gear    : " + read_data(gearPos)[0:3], 2, width, height, -150, 30)
+    prepare_text("Fuel low: " + read_data(fuelLevelLowPos)[0:3], 2, width, height, -150, 60)
+    prepare_text("Speed   : " + read_data(speedPos)[0:3], 2, width, height, -150, 90)
+    prepare_text("Sat v.  : " + read_data(satellitesInViewPos)[0:3], 2, width, height, -150, 120)
+    prepare_text("Sat u.  : " + read_data(satellitesInUsePos)[0:3], 2, width, height, -150, 150)
 
     # Right column
-    prepare_text("GPS lat    : " + read_data(gpsLatPos), 2, width, height, 150, -60)
-    prepare_text("GPS long   : " + read_data(gpsLongPos), 2, width, height, 150, -30)
-    prepare_text("GPS acc    : " + read_data(gpsAccPos), 2, width, height, 150, 0)
-    prepare_text("GPS alt    : " + read_data(gpsAltPos), 2, width, height, 150, 30)
-    prepare_text("GPS speed  : " + read_data(gpsSpeedPos), 2, width, height, 150, 60)
-    prepare_text("GPS bear   : " + read_data(gpsBearingPos), 2, width, height, 150, 90)
-    prepare_text("Park brake : " + read_data(parkingBrakePos), 2, width, height, 150, 120)
-    prepare_text("GPS time   : " + read_data(gpsTimestampPos), 2, width, height, 150, 150)
+    prepare_text("GPS lat    : " + read_data(gpsLatPos)[0:3], 2, width, height, 150, -60)
+    prepare_text("GPS long   : " + read_data(gpsLongPos)[0:3], 2, width, height, 150, -30)
+    prepare_text("GPS acc    : " + read_data(gpsAccPos)[0:3], 2, width, height, 150, 0)
+    prepare_text("GPS alt    : " + read_data(gpsAltPos)[0:3], 2, width, height, 150, 30)
+    prepare_text("GPS speed  : " + read_data(gpsSpeedPos)[0:3], 2, width, height, 150, 60)
+    prepare_text("GPS bear   : " + read_data(gpsBearingPos)[0:3], 2, width, height, 150, 90)
+    prepare_text("Park brake : " + read_data(parkingBrakePos)[0:3], 2, width, height, 150, 120)
+    prepare_text("GPS time   : " + read_data(gpsTimestampPos)[0:3], 2, width, height, 150, 150)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack ('<2sIHHI', b'BM', len (pixels) + 62, 0, 0, 62)
