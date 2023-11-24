@@ -4,7 +4,6 @@ import time
 import struct
 import os
 import signal
-import socket
 
 start_time = time.time ()  # Record the start time
 
@@ -92,7 +91,14 @@ def get_char_representation(char):
                      [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
 
 
-def execute_dmdt_commands():
+def execute_initial_commands():
+    commandenableAAdata = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:1304:210 1"
+    try:
+        print ("Executing '{}'".format (commandenableAAdata))
+        subprocess.Popen (commandenableAAdata, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+    except subprocess.CalledProcessError as e:
+        print ("Cannot enable AA data: " + {e.returncode})
+
     commandslay = "/bin/slay loadandshowimage"
     try:
         print ("Executing '{}'".format (commandslay))
@@ -239,5 +245,5 @@ while True:
 
     if execute_once:
         if platform.system () != "Windows":
-            execute_dmdt_commands ()
+            execute_initial_commands ()
         execute_once = False  # Set the control variable to False after execution
