@@ -1,5 +1,17 @@
 # VcMOSTRenderMqb
 Way to write custom data to Virtual cockpit for MQB platform
+Supported screens (as of now probably most screens which are able to receive MOST map will be supported):
+continental VDO
+3G0920798 - passat B8 / arteon
+3G0920791 - passat B8 / arteon
+3G0920794 - passat B8 GTE
+5NA920791 - tiguan
+5G1920791 - golf mk7
+5G1920794 - golf mk7 GTE
+5G1920795 - e-golf mk7
+5G1920798 - golf mk7
+3CG920791 - vw atlas
+
 
 To make this work you need to install Python3.3 to MIB2.5 first using following package repositories: https://pkgsrc.mibsolution.one then save current version of VCRenderData.py to sd card or upload it via winSCP
 To run the code then execute 
