@@ -21,13 +21,26 @@ last_turn_angle = 0
 last_turn_number = 0
 last_valid = 0
 
-log_file_path = 'log.txt'  # Replace with the actual path to your log file
-log_directory_path = '/sd1/logs' # this part is not finished
-pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=([A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
+def find_newest_file(directory, extension=".esotrace"):
+    # Create a list of all files with the specified extension in the directory and subdirectories
+    files = [f for f in glob.iglob(os.path.join(directory, '**', f'*{extension}'), recursive=True) if os.path.isfile(f)]
+
+    # Check if there are any matching files
+    if not files:
+        return None
+
+    # Find the newest file based on modification time
+    newest_file = max(files, key=os.path.getmtime)
+    return newest_file
+
+log_directory_path = 'logs' # point it to place where .esotrace files are stored
+next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=([A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
+
+
 
 def parse_log_line(line):
     global last_road, last_turn_side, last_event, last_turn_angle, last_turn_number, last_valid
-    match = re.search(pattern, line)
+    match = re.search(next_turn_pattern, line)
     if match:
         road, turn_side, event, turn_angle, turn_number, valid = match.groups()
         last_road = road
@@ -226,8 +239,9 @@ while True:
     # Create a blank monochromatic image of size 800x480 (all pixels initialized to 0)
     pixels = bytearray ([0] * (width * height // 8))  # 1 byte per 8 pixels
 
-
-    last_occurrence_line = find_last_occurrence(log_file_path, pattern)
+    log_file_path = find_newest_file(log_directory_path)
+    print("Using log file: ", log_file_path)
+    last_occurrence_line = find_last_occurrence(log_file_path, next_turn_pattern)
 
     if last_occurrence_line:
         parse_log_line(last_occurrence_line)
