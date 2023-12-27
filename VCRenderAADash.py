@@ -6,6 +6,7 @@ import os
 import signal
 import re
 import glob
+import random
 
 start_time = time.time ()  # Record the start time
 
@@ -141,49 +142,24 @@ def get_char_representation(char):
     return font.get (ord (char),
                      [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
 
-def get_icon_representation(char):
-    return font.get (ord (char),
-                     [0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000, 0b00000000])
-
-
 def execute_initial_commands():
-    commandenableAAdata = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:1304:210 1"
-    try:
-        print ("Executing '{}'".format (commandenableAAdata))
-        subprocess.Popen (commandenableAAdata, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    except subprocess.CalledProcessError as e:
-        print ("Cannot enable AA data: " + {e.returncode})
+    commands = [
+        ("on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:1304:210 1", "Cannot enable AA sensors data"),
+        ("/bin/slay loadandshowimage", "Cannot kill all loadandshowimage"),
+        ("/eso/bin/apps/dmdt sc 4 -9", "Set context of display 4 failed with error"),
+        ("/eso/bin/apps/dmdt sb 0", "Switch buffer on display 0 failed with error"),
+        ("/eso/bin/apps/dmdt sc 0 71", "Switch buffer on display 0 failed with error"),
+    ]
 
-    commandslay = "/bin/slay loadandshowimage"
-    try:
-        print ("Executing '{}'".format (commandslay))
-        subprocess.Popen (commandslay, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    except subprocess.CalledProcessError as e:
-        print ("Kill all runnnig loadandshowimage: " + {e.returncode})
+    for i, (command, error_message) in enumerate(commands):
+        try:
+            print(f"Executing '{command}'")
+            subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
+        except subprocess.CalledProcessError as e:
+            print(f"{error_message}: {e.returncode}")
 
-    commandcontext = "/eso/bin/apps/dmdt sc 4 -9"
-    try:
-        print ("Executing '{}'".format (commandcontext))
-        subprocess.Popen (commandcontext, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    except subprocess.CalledProcessError as e:
-        print ("Set context of display 4 failed with error: " + {e.returncode})
-
-    time.sleep (2)
-
-    commandbuffer = "/eso/bin/apps/dmdt sb 0"
-    try:
-        print ("Executing '{}'".format (commandbuffer))
-        subprocess.Popen (commandbuffer, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    except subprocess.CalledProcessError as e:
-        print ("Switch buffer on display 0 failed with error:" + {e.returncode})
-
-    commandbuffer2 = "/eso/bin/apps/dmdt sc 0 71"
-    try:
-        print ("Executing '{}'".format (commandbuffer2))
-        subprocess.Popen (commandbuffer2, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
-    except subprocess.CalledProcessError as e:
-        print ("Switch buffer on display 0 failed with error:" + {e.returncode})
-
+        if i == 2:  # Insert time.sleep(2) after the third command
+            time.sleep(2)
 
 def read_data(position):
     command = ""
@@ -231,7 +207,58 @@ def prepare_text(text, textScale, width, height, offsetx, offsety):
 
     draw_text (text, text_x + offsetx, text_y + offsety, textScale)
 
+def read_bmp(file_path):
+    with open(file_path, 'rb') as file:
+        # Read BMP header (24 bytes)
+        header = file.read(24)
+        offset = int.from_bytes(header[10:14], byteorder='little')
 
+        # Check if it's a BMP file (signature "BM" at the beginning)
+        if header[:2] != b'BM':
+            raise ValueError("Not a valid BMP file")
+
+        # Extract width and height from the header
+        width_offset = 18
+        height_offset = 22
+        width = int.from_bytes(header[width_offset:width_offset + 4], byteorder='little')
+        height = int.from_bytes(header[height_offset:height_offset + 4], byteorder='little')
+        file.seek(offset)
+        # Read the image data
+        data = bytes(list(file.read()))
+
+    return width, height, data
+
+def read_all_bmp_files(folder_path):
+    bmp_files_data = []
+
+    for filename in os.listdir(folder_path):
+        file_path = os.path.join(folder_path, filename)
+
+        # Check if it's a file and has a BMP extension
+        if os.path.isfile(file_path) and file_path.lower().endswith(".bmp"):
+            try:
+                width, height, data = read_bmp(file_path)
+                bmp_files_data.append({'filename': filename, 'width': width, 'height': height, 'data': data})
+            except Exception as e:
+                print(f"Error reading {filename}: {e}")
+
+    return bmp_files_data
+def overlay_icon_on_bw_bmp(pixels, icon_path, overlay_position):
+
+    selectedicon = random.randrange(0, 11)
+
+    # Overlay the icon onto the larger canvas
+    for y in range(bmp_files_data[selectedicon]['height']):
+        for x in range(bmp_files_data[selectedicon]['width']):
+            icon_index = (y * bmp_files_data[selectedicon]['width'] + x)
+            if bmp_files_data[selectedicon]['data'][icon_index] > 0:
+                set_pixel(x + overlay_position[0], y + overlay_position[1])
+
+icons_folder_path = "icons"
+bmp_files_data = read_all_bmp_files(icons_folder_path)
+# Now bmp_files_data is a list of dictionaries, each containing width, height, data, and filename
+for file_data in bmp_files_data:
+    print(f"File: {file_data['filename']}, Width: {file_data['width']}, Height: {file_data['height']}, Size: {len(file_data['data'])} bytes")
 execute_once = True
 while True:
 
@@ -256,11 +283,11 @@ while True:
         print("Pattern not found in the log file.")
     ############################################### RENDER ##################################
     # Left column
-    prepare_text("Road:" + last_road, 2, width, height, 0, -20)
-    prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, 0)
-    prepare_text("Event: " + last_turn_side, 2, width, height, 0, 20)
-    prepare_text("Turn Angle:" + last_turn_angle, 2, width, height, 0, 40)
-    prepare_text("Turn Number: " + last_turn_number, 2, width, height, 0, 60)
+    prepare_text("Road:" + last_road, 2, width, height, 0, -60)
+    prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, -80)
+    prepare_text("Event: " + last_turn_side, 2, width, height, 0, -100)
+    prepare_text("Turn Angle:" + last_turn_angle, 2, width, height, 0, -120)
+    prepare_text("Turn Number: " + last_turn_number, 2, width, height, 0, -140)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack ('<2sIHHI', b'BM', len (pixels) + 62, 0, 0, 62)
@@ -271,12 +298,18 @@ while True:
     # Color palette for monochromatic BMP (black and white)
     color_palette = struct.pack ('<II', 0x00000000, 0x00FFFFFF)
 
+    overlay_position = (400 - 96, 200)
+    overlay_icon_on_bw_bmp(pixels, "icons/ic_depart.bmp", overlay_position)
+
     # Create and save the BMP file
     with open (output_file, 'wb') as bmp_file:
         bmp_file.write (bmp_header)
         bmp_file.write (bmp_info_header)
         bmp_file.write (color_palette)
         bmp_file.write (pixels)
+
+
+
 
     end_time = time.time ()  # Record the end time
     elapsed_time = end_time - start_time
