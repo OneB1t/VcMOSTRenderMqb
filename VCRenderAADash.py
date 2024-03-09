@@ -34,7 +34,7 @@ def find_newest_file(directory, extension=".esotrace"):
     newest_file = max(files, key=os.path.getmtime)
     return newest_file
 
-log_directory_path = 'logs' # point it to place where .esotrace files are stored
+log_directory_path = '/fs/sda0/esotrace_SD' # point it to place where .esotrace files are stored
 next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=([A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
 
 
@@ -144,6 +144,7 @@ def get_char_representation(char):
 
 def execute_initial_commands():
     commands = [
+        ("/scripts/activateSDCardEsotrace.sh", "Cannot activate SD card trace log"),
         ("on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:1304:210 1", "Cannot enable AA sensors data"),
         ("/bin/slay loadandshowimage", "Cannot kill all loadandshowimage"),
         ("/eso/bin/apps/dmdt sc 4 -9", "Set context of display 4 failed with error"),
