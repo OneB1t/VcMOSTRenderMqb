@@ -7,6 +7,7 @@ import signal
 import re
 import glob
 import unicodedata
+import io
 
 start_time = time.time()  # Record the start time
 
@@ -25,12 +26,16 @@ last_distance_meters = 0
 last_distance_seconds = 0
 last_distance_valid = 0
 
+debug = 0
+
 # trace log parser
 log_directory_path = '/fs/sda0/esotrace_SD'  # point it to place where .esotrace files are stored
 next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=(.*[A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
 next_turn_distance_patttern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnDistance : distanceMeters=(-?\d+), timeSeconds=(-?\d+), valid=(\d)'
 
 icons_folder_path = "icons"
+
+speedPos = "i:1304:216"
 
 # Define a simple 8x8 font for prepareing text (ASCII characters)
 font = {
@@ -110,7 +115,9 @@ def parse_log_line_next_turn_distance(line):
 
 
 def find_last_occurrence(log_file_path, pattern):
-    with open(log_file_path, 'r', encoding='utf-8') as file:
+    if not log_file_path:
+        return None
+    with io.open(log_file_path, 'r', encoding='utf-8') as file:
         lines = file.readlines()
 
     for line in reversed(lines):
@@ -262,6 +269,11 @@ def read_all_bmp_files(folder_path):
 
     return bmp_files_data
 
+def convert_to_km(meters):
+    if int(meters) >= 1000:
+        return str("{:.1f}".format(int(meters) / 1000)) + " Km"  # Convert meters to kilometers
+    else:
+        return meters + " m"  # Return 1000 meters if less than 1000 meters
 
 def overlay_icon_on_bw_bmp(selectedicon, overlay_position):
     # Overlay the icon onto the larger canvas
@@ -291,7 +303,7 @@ while True:
 
     if last_occurrence_line_next_turn:
         parse_log_line_next_turn(last_occurrence_line_next_turn)
-        print("Parsed Data:")
+        print("Parsed next turn data:")
         print("Road:", last_road)
         print("Turn Side:", last_turn_side)
         print("Event:", last_event)
@@ -303,30 +315,13 @@ while True:
 
     if last_occurrence_line_next_turn_distance:
         parse_log_line_next_turn_distance(last_occurrence_line_next_turn_distance)
-        print("Parsed Data:")
+        print("Parsed distance data:")
         print("Distance meters:", str(last_distance_meters))
         print("Distance seconds:", str(last_distance_seconds))
         print("Valid:", str(last_distance_valid))
     else:
         print("Distance pattern not found in the log file.")
     ############################################### RENDER ##################################
-    # Left column
-    prepare_text("Road:" + last_road, 2, width, height, 0, -60)
-    prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, -80)
-    prepare_text("Event: " + last_event, 2, width, height, 0, -100)
-    prepare_text("Turn Angle:" + str(last_turn_angle), 2, width, height, 0, -120)
-    prepare_text("Turn Number: " + str(last_turn_number), 2, width, height, 0, -140)
-    prepare_text("Distance meters: " + str(last_distance_meters), 2, width, height, 0, -160)
-    prepare_text("Distance seconds: " + str(last_distance_seconds), 2, width, height, 0, -180)
-
-    # BMP header for a monochromatic (1-bit) BMP
-    bmp_header = struct.pack('<2sIHHI', b'BM', len(pixels) + 62, 0, 0, 62)
-
-    # Bitmap info header
-    bmp_info_header = struct.pack('<IiiHHIIIIII', 40, width, height, 1, 1, 0, len(pixels), 0, 2, 2, 0)
-
-    # Color palette for monochromatic BMP (black and white)
-    color_palette = struct.pack('<II', 0x00000000, 0x00FFFFFF)
 
     overlay_position = (400 - 96, 200)
     iconindex = 0
@@ -374,11 +369,11 @@ while True:
         if last_turn_side == "RIGHT":
             iconindex = 10
     if last_event == "ROUNDABOUT_ENTER":
-        iconindex = 2
+        iconindex = 12
     if last_event == "ROUNDABOUT_EXIT":
-        iconindex = 2
+        iconindex = 12
     if last_event == "ROUNDABOUT_ENTER_AND_EXIT":
-        iconindex = 2
+        iconindex = 12
     if last_event == "STRAIGHT":
         iconindex = 31
     if last_event == "FERRY_BOAT":
@@ -394,6 +389,37 @@ while True:
             iconindex = 3
 
     overlay_icon_on_bw_bmp(iconindex, overlay_position)
+
+    if last_event.__contains__("ROUNDABOUT"):  # draw turn number for roundabounts
+        prepare_text(str(last_turn_number), 5, width, height, 70, 0)
+
+    prepare_text(convert_to_km(last_distance_meters), 4, width, height, 0, 180)
+
+    # normal dashboard
+    if debug == 0:
+        prepare_text(read_data(speedPos)[0:3], 6, width, height, 0, -180)
+        prepare_text("Km/h", 2, width, height, 120, -170)
+        prepare_text(last_road, 2, width, height, 0, -60)
+    # debug data
+    if debug == 1:
+        prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, -80)
+        prepare_text("Event: " + last_event, 2, width, height, 0, -100)
+        prepare_text("Turn Angle:" + str(last_turn_angle), 2, width, height, 0, -120)
+        prepare_text("Turn Number: " + str(last_turn_number), 2, width, height, 0, -140)
+        prepare_text("Distance meters: " + str(last_distance_meters), 2, width, height, 0, -160)
+        prepare_text("Distance seconds: " + str(last_distance_seconds), 2, width, height, 0, -180)
+
+
+    # BMP header for a monochromatic (1-bit) BMP
+    bmp_header = struct.pack('<2sIHHI', b'BM', len(pixels) + 62, 0, 0, 62)
+
+    # Bitmap info header
+    bmp_info_header = struct.pack('<IiiHHIIIIII', 40, width, height, 1, 1, 0, len(pixels), 0, 2, 2, 0)
+
+    # Color palette for monochromatic BMP (black and white)
+    color_palette = struct.pack('<II', 0x00000000, 0x00FFFFFF)
+
+
 
     # Create and save the BMP file
     with open(output_file, 'wb') as bmp_file:
