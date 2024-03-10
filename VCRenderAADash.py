@@ -371,7 +371,7 @@ while True:
     if last_event == "ROUNDABOUT_ENTER":
         iconindex = 12
     if last_event == "ROUNDABOUT_EXIT":
-        iconindex = 12
+        iconindex = 14
     if last_event == "ROUNDABOUT_ENTER_AND_EXIT":
         iconindex = 12
     if last_event == "STRAIGHT":
@@ -391,7 +391,7 @@ while True:
     overlay_icon_on_bw_bmp(iconindex, overlay_position)
 
     if last_event.__contains__("ROUNDABOUT"):  # draw turn number for roundabounts
-        prepare_text(str(last_turn_number), 5, width, height, 70, 0)
+        prepare_text(str(last_turn_number), 5, width, height, 85, 0)
 
     prepare_text(convert_to_km(last_distance_meters), 4, width, height, 0, 180)
 

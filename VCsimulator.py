@@ -11,8 +11,8 @@ def display_image(image_path):
         return
 
     # Display the image
-    cv2.imshow('ImageWindowName', img)
-    cv2.setWindowProperty('ImageWindowName', cv2.WND_PROP_TOPMOST, 1)
+    cv2.imshow('VCSimulator', img)
+    cv2.setWindowProperty('VCSimulator', cv2.WND_PROP_TOPMOST, 1)
     cv2.waitKey(1)
 
 def main():
