@@ -14,13 +14,22 @@ start_time = time.time ()  # Record the start time
 width = 800
 height = 480
 
-# Data Position
+# Data Position (global variables)
 last_road = ""
 last_turn_side = ""
 last_event = ""
 last_turn_angle = 0
 last_turn_number = 0
 last_valid = 0
+last_distance_meters = 0
+last_distance_seconds = 0
+last_distance_valid = 0
+
+# trace log parser
+log_directory_path = '/fs/sda0/esotrace_SD' # point it to place where .esotrace files are stored
+next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=(.*[A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
+next_turn_distance_patttern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnDistance : distanceMeters=(-?\d+), timeSeconds=(-?\d+), valid=(\d)'
+
 
 def find_newest_file(directory, extension=".esotrace"):
     # Create a list of all files with the specified extension in the directory and subdirectories
@@ -34,12 +43,7 @@ def find_newest_file(directory, extension=".esotrace"):
     newest_file = max(files, key=os.path.getmtime)
     return newest_file
 
-log_directory_path = '/fs/sda0/esotrace_SD' # point it to place where .esotrace files are stored
-next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=([A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
-
-
-
-def parse_log_line(line):
+def parse_log_line_next_turn(line):
     global last_road, last_turn_side, last_event, last_turn_angle, last_turn_number, last_valid
     match = re.search(next_turn_pattern, line)
     if match:
@@ -58,6 +62,20 @@ def parse_log_line(line):
         last_turn_angle = 0
         last_turn_number = 0
         last_valid = 0
+
+def parse_log_line_next_turn_distance(line):
+    global last_distance_meters, last_distance_seconds, last_distance_valid
+    match = re.search(next_turn_distance_patttern, line)
+    if match:
+        distancemeters, timeseconds, valid = match.groups()
+        last_distance_meters = distancemeters
+        last_distance_seconds = timeseconds
+        last_distance_valid = valid
+    else:
+        # Set default values or handle the case where the pattern is not found
+        last_distance_meters = 0
+        last_distance_seconds = 0
+        last_distance_valid = 0
 
 
 def find_last_occurrence(log_file_path, pattern):
@@ -229,6 +247,7 @@ def read_bmp(file_path):
 
     return width, height, data
 
+
 def read_all_bmp_files(folder_path):
     bmp_files_data = []
 
@@ -244,10 +263,7 @@ def read_all_bmp_files(folder_path):
                 print(f"Error reading {filename}: {e}")
 
     return bmp_files_data
-def overlay_icon_on_bw_bmp(pixels, icon_path, overlay_position):
-
-    selectedicon = random.randrange(0, 11)
-
+def overlay_icon_on_bw_bmp(selectedicon, overlay_position):
     # Overlay the icon onto the larger canvas
     for y in range(bmp_files_data[selectedicon]['height']):
         for x in range(bmp_files_data[selectedicon]['width']):
@@ -269,10 +285,11 @@ while True:
 
     log_file_path = find_newest_file(log_directory_path)
     print("Using log file: ", log_file_path)
-    last_occurrence_line = find_last_occurrence(log_file_path, next_turn_pattern)
+    last_occurrence_line_next_turn = find_last_occurrence(log_file_path, next_turn_pattern)
+    last_occurrence_line_next_turn_distance = find_last_occurrence(log_file_path, next_turn_distance_patttern)
 
-    if last_occurrence_line:
-        parse_log_line(last_occurrence_line)
+    if last_occurrence_line_next_turn:
+        parse_log_line_next_turn(last_occurrence_line_next_turn)
         print("Parsed Data:")
         print("Road:", last_road)
         print("Turn Side:", last_turn_side)
@@ -281,14 +298,25 @@ while True:
         print("Turn Number:", last_turn_number)
         print("Valid:", last_valid)
     else:
-        print("Pattern not found in the log file.")
+        print("Next turn pattern not found in the log file.")
+
+    if last_occurrence_line_next_turn_distance:
+        parse_log_line_next_turn_distance(last_occurrence_line_next_turn_distance)
+        print("Parsed Data:")
+        print("Distance meters:", str(last_distance_meters))
+        print("Distance seconds:", str(last_distance_seconds))
+        print("Valid:", str(last_distance_valid))
+    else:
+        print("Distance pattern not found in the log file.")
     ############################################### RENDER ##################################
     # Left column
     prepare_text("Road:" + last_road, 2, width, height, 0, -60)
     prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, -80)
-    prepare_text("Event: " + last_turn_side, 2, width, height, 0, -100)
-    prepare_text("Turn Angle:" + last_turn_angle, 2, width, height, 0, -120)
-    prepare_text("Turn Number: " + last_turn_number, 2, width, height, 0, -140)
+    prepare_text("Event: " + last_event, 2, width, height, 0, -100)
+    prepare_text("Turn Angle:" + str(last_turn_angle), 2, width, height, 0, -120)
+    prepare_text("Turn Number: " + str(last_turn_number), 2, width, height, 0, -140)
+    prepare_text("Distance meters: " + str(last_distance_meters), 2, width, height, 0, -160)
+    prepare_text("Distance seconds: " + str(last_distance_seconds), 2, width, height, 0, -180)
 
     # BMP header for a monochromatic (1-bit) BMP
     bmp_header = struct.pack ('<2sIHHI', b'BM', len (pixels) + 62, 0, 0, 62)
@@ -300,7 +328,71 @@ while True:
     color_palette = struct.pack ('<II', 0x00000000, 0x00FFFFFF)
 
     overlay_position = (400 - 96, 200)
-    overlay_icon_on_bw_bmp(pixels, "icons/ic_depart.bmp", overlay_position)
+    iconindex = 0
+
+    if last_event == "UNKNOWN":
+        iconindex = 31
+    if last_event == "DEPART":
+        iconindex = 0
+    if last_event == "NAME_CHANGE":
+        iconindex = 0
+    if last_event == "SLIGHT_TURN":
+        if last_turn_side == "LEFT":
+            iconindex = 36
+        else:
+            iconindex = 37
+    if last_event == "TURN":
+        if last_turn_side == "LEFT":
+            iconindex = 30
+        else:
+            iconindex = 29
+    if last_event == "SHARP_TURN":
+        if last_turn_side == "LEFT":
+            iconindex = 34
+        else:
+            iconindex = 35
+    if last_event == "U_TURN":
+        if last_turn_side == "LEFT":
+            iconindex = 38
+        else:
+            iconindex = 39
+    if last_event == "ON_RAMP":
+        iconindex = 2
+    if last_event == "OFF_RAMP":
+        iconindex = 2
+    if last_event == "FORK":
+        if last_turn_side == "LEFT":
+          iconindex = 6
+        else:
+          iconindex = 7
+    if last_event == "MERGE":
+        if last_turn_side == "UNSPECIFIED":
+            iconindex = 8
+        if last_turn_side == "LEFT":
+            iconindex = 9
+        if last_turn_side == "RIGHT":
+            iconindex = 10
+    if last_event == "ROUNDABOUT_ENTER":
+        iconindex = 2
+    if last_event == "ROUNDABOUT_EXIT":
+        iconindex = 2
+    if last_event == "ROUNDABOUT_ENTER_AND_EXIT":
+        iconindex = 2
+    if last_event == "STRAIGHT":
+        iconindex = 31
+    if last_event == "FERRY_BOAT":
+        iconindex = 4
+    if last_event == "FERRY_TRAIN":
+        iconindex = 5
+    if last_event == "DESTINATION":
+        if last_turn_side == "UNSPECIFIED":
+            iconindex = 1
+        if last_turn_side == "LEFT":
+            iconindex = 2
+        if last_turn_side == "RIGHT":
+            iconindex = 3
+
+    overlay_icon_on_bw_bmp(iconindex, overlay_position)
 
     # Create and save the BMP file
     with open (output_file, 'wb') as bmp_file:
@@ -308,9 +400,6 @@ while True:
         bmp_file.write (bmp_info_header)
         bmp_file.write (color_palette)
         bmp_file.write (pixels)
-
-
-
 
     end_time = time.time ()  # Record the end time
     elapsed_time = end_time - start_time
