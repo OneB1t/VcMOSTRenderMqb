@@ -33,6 +33,7 @@ log_directory_path = '/fs/sda0/esotrace_SD'  # point it to place where .esotrace
 next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=(.*[A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
 next_turn_distance_patttern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnDistance : distanceMeters=(-?\d+), timeSeconds=(-?\d+), valid=(\d)'
 
+
 icons_folder_path = "icons"
 
 speedPos = "i:1304:216"
@@ -66,8 +67,20 @@ def strip_accents(s):
                    if unicodedata.category(c) != 'Mn')
 
 def find_newest_file(directory, extension=".esotrace"):
-    # Create a list of all files with the specified extension in the directory and subdirectories
-    files = [f for f in glob.iglob(os.path.join(directory, '**', f'*{extension}'), recursive=True) if os.path.isfile(f)]
+    # Create an empty list to store matching files
+    files = []
+
+    # Traverse the directory and its subdirectories
+    for root, _, filenames in os.walk(directory):
+        for filename in filenames:
+            # Check if the file has the specified extension
+            if filename.endswith(extension):
+                # Construct the full path of the file
+                file_path = os.path.join(root, filename)
+                # Check if it's a regular file
+                if os.path.isfile(file_path):
+                    # Append the file to the list
+                    files.append(file_path)
 
     # Check if there are any matching files
     if not files:
@@ -76,6 +89,7 @@ def find_newest_file(directory, extension=".esotrace"):
     # Find the newest file based on modification time
     newest_file = max(files, key=os.path.getmtime)
     return newest_file
+
 
 
 def parse_log_line_next_turn(line):
@@ -172,7 +186,7 @@ def execute_initial_commands():
 
     for i, (command, error_message) in enumerate(commands):
         try:
-            print(f"Executing '{command}'")
+            print("Executing '{}'".format(command))
             subprocess.Popen(command, stdout=subprocess.PIPE, shell=True, preexec_fn=os.setsid)
         except subprocess.CalledProcessError as e:
             print(f"{error_message}: {e.returncode}")
@@ -265,7 +279,7 @@ def read_all_bmp_files(folder_path):
                 width, height, data = read_bmp(file_path)
                 bmp_files_data.append({'filename': filename, 'width': width, 'height': height, 'data': data})
             except Exception as e:
-                print(f"Error reading {filename}: {e}")
+                print("Error reading {}: {}".format(filename, e))
 
     return bmp_files_data
 
@@ -287,8 +301,12 @@ def overlay_icon_on_bw_bmp(selectedicon, overlay_position):
 bmp_files_data = read_all_bmp_files(icons_folder_path)
 # Now bmp_files_data is a list of dictionaries, each containing width, height, data, and filename
 for file_data in bmp_files_data:
-    print(
-        f"File: {file_data['filename']}, Width: {file_data['width']}, Height: {file_data['height']}, Size: {len(file_data['data'])} bytes")
+    print("File: {filename}, Width: {width}, Height: {height}, Size: {size} bytes".format(
+        filename=file_data['filename'],
+        width=file_data['width'],
+        height=file_data['height'],
+        size=len(file_data['data'])
+    ))
 execute_once = True
 while True:
 
