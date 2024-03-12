@@ -5,9 +5,7 @@ import struct
 import os
 import signal
 import re
-import glob
 import unicodedata
-import io
 
 start_time = time.time()  # Record the start time
 
@@ -30,8 +28,8 @@ debug = 0
 
 # trace log parser
 log_directory_path = '/fs/sda0/esotrace_SD'  # point it to place where .esotrace files are stored
-next_turn_pattern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'([^\']*)\', turnSide=([A-Z]+), event=(.*[A-Z]+), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d)'
-next_turn_distance_patttern = r'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnDistance : distanceMeters=(-?\d+), timeSeconds=(-?\d+), valid=(\d)'
+next_turn_pattern = re.compile(rb'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnEvent : road=\'(.*?)\', turnSide=(.*?), event=(.*?), turnAngle=(-?\d+), turnNumber=(-?\d+), valid=(\d{1})')
+next_turn_distance_pattern = re.compile(rb'\[DSIAndroidAuto2Impl\] onJob_updateNavigationNextTurnDistance : distanceMeters=(-?\d+), timeSeconds=(-?\d+), valid=(\d{1})')
 
 
 icons_folder_path = "icons"
@@ -92,17 +90,16 @@ def find_newest_file(directory, extension=".esotrace"):
 
 
 
-def parse_log_line_next_turn(line):
+def parse_log_line_next_turn(match):
     global last_road, last_turn_side, last_event, last_turn_angle, last_turn_number, last_valid
-    match = re.search(next_turn_pattern, line)
     if match:
         road, turn_side, event, turn_angle, turn_number, valid = match.groups()
-        last_road = road
-        last_turn_side = turn_side
-        last_event = event
-        last_turn_angle = turn_angle
-        last_turn_number = turn_number
-        last_valid = valid
+        last_road = str(road, "utf-8")
+        last_turn_side = str(turn_side, "utf-8")
+        last_event = str(event, "utf-8")
+        last_turn_angle = int(turn_angle)
+        last_turn_number = int(turn_number)
+        last_valid = int(valid)
     else:
         # Set default values or handle the case where the pattern is not found
         last_road = ""
@@ -113,32 +110,44 @@ def parse_log_line_next_turn(line):
         last_valid = 0
 
 
-def parse_log_line_next_turn_distance(line):
+def parse_log_line_next_turn_distance(match):
     global last_distance_meters, last_distance_seconds, last_distance_valid
-    match = re.search(next_turn_distance_patttern, line)
     if match:
         distancemeters, timeseconds, valid = match.groups()
-        last_distance_meters = distancemeters
-        last_distance_seconds = timeseconds
-        last_distance_valid = valid
+        last_distance_meters = int(distancemeters)
+        last_distance_seconds = int(timeseconds)
+        last_distance_valid = int(valid)
     else:
         # Set default values or handle the case where the pattern is not found
         last_distance_meters = 0
         last_distance_seconds = 0
         last_distance_valid = 0
-
-
-def find_last_occurrence(log_file_path, pattern):
-    if not log_file_path:
+def search_last_occurence(file_path, regex_pattern):
+    # Open the binary file in read mode
+    if file_path is None:
+        print("File path is not provided.")
         return None
-    with io.open(log_file_path, 'r', encoding='utf-8') as file:
-        lines = file.readlines()
-
-    for line in reversed(lines):
-        if re.search(pattern, line):
-            return line.strip()
-
-    return None
+    if not os.path.exists(file_path):
+        print("File '{}' does not exist.".format(file_path))
+        return None
+    with open(file_path, 'rb') as file:
+        # Set the chunk size for reading
+        chunk_size = 4096 * 1000
+        # Start searching from the end of the file
+        file.seek(0, 2)
+        file_size = file.tell()
+        while file.tell() > 0:
+            offset = min(chunk_size, file.tell())
+            file.seek(-offset, 1)
+            data = file.read(offset)
+            match = regex_pattern.search(data)
+            if match:
+                return match
+            elif file.tell() == 0:
+                break
+            elif file.tell() < chunk_size: # if we search entire file in single run then exit on first run
+                break
+        return None
 
 # Function to set a pixel to white (255) at the specified coordinates
 def set_pixel(x, y):
@@ -287,7 +296,7 @@ def convert_to_km(meters):
     if int(meters) >= 1000:
         return str("{:.1f}".format(int(meters) / 1000)) + " Km"  # Convert meters to kilometers
     else:
-        return meters + " m"  # Return 1000 meters if less than 1000 meters
+        return str(meters) + " m"  # Return 1000 meters if less than 1000 meters
 
 def overlay_icon_on_bw_bmp(selectedicon, overlay_position):
     # Overlay the icon onto the larger canvas
@@ -296,6 +305,29 @@ def overlay_icon_on_bw_bmp(selectedicon, overlay_position):
             icon_index = (y * bmp_files_data[selectedicon]['width'] + x)
             if bmp_files_data[selectedicon]['data'][icon_index] > 0:
                 set_pixel(x + overlay_position[0], y + overlay_position[1])
+
+def render_multiline_road_text(text):
+    words = text.split()
+    lines = []
+    current_line = ""
+    for word in words:
+        if len(current_line + " " + word) <= 25:
+            current_line += " " + word
+        else:
+            lines.append(current_line.strip())
+            current_line = word
+    if current_line:
+        lines.append(current_line.strip())
+    fontsize = 2
+    offsetstep = 20
+    if len(lines) > 4:
+        fontsize = 1
+        offsetstep = 10
+    offset = -60
+    for line in lines:
+        prepare_text(line, fontsize, width, height, 0, offset)
+        offset = offset - offsetstep
+
 
 
 bmp_files_data = read_all_bmp_files(icons_folder_path)
@@ -316,9 +348,14 @@ while True:
 
     log_file_path = find_newest_file(log_directory_path)
     print("Using log file: ", log_file_path)
-    last_occurrence_line_next_turn = find_last_occurrence(log_file_path, next_turn_pattern)
-    last_occurrence_line_next_turn_distance = find_last_occurrence(log_file_path, next_turn_distance_patttern)
+    start_time = time.time()
 
+    last_occurrence_line_next_turn = search_last_occurence(log_file_path, next_turn_pattern)
+    last_occurrence_line_next_turn_distance = search_last_occurence(log_file_path, next_turn_distance_pattern)
+
+    end_time = time.time()
+    execution_time = end_time - start_time
+    print("Pattern search time:", execution_time, "seconds")
     if last_occurrence_line_next_turn:
         parse_log_line_next_turn(last_occurrence_line_next_turn)
         print("Parsed next turn data:")
@@ -357,9 +394,9 @@ while True:
             iconindex = 37
     if last_event == "TURN":
         if last_turn_side == "LEFT":
-            iconindex = 30
+            iconindex = 32
         else:
-            iconindex = 29
+            iconindex = 33
     if last_event == "SHARP_TURN":
         if last_turn_side == "LEFT":
             iconindex = 34
@@ -367,9 +404,9 @@ while True:
             iconindex = 35
     if last_event == "U_TURN":
         if last_turn_side == "LEFT":
-            iconindex = 38
-        else:
             iconindex = 39
+        else:
+            iconindex = 38
     if last_event == "ON_RAMP":
         iconindex = 2
     if last_event == "OFF_RAMP":
@@ -417,7 +454,8 @@ while True:
     if debug == 0:
         prepare_text(read_data(speedPos)[0:3], 6, width, height, 0, -180)
         prepare_text("Km/h", 2, width, height, 120, -170)
-        prepare_text(last_road, 2, width, height, 0, -60)
+        render_multiline_road_text(last_road)
+        # prepare_text(last_road, 2, width, height, 0, -60)
     # debug data
     if debug == 1:
         prepare_text("Turn Side: " + last_turn_side, 2, width, height, 0, -80)
