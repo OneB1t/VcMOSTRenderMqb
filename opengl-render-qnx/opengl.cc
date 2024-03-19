@@ -1,9 +1,17 @@
 #include <cstdlib>
 #include <iostream>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/keycodes.h>
+#include <time.h>
 
-
-#include <EGL/egl.h>
+#include <KD/kd.h>
 #include <GLES2/gl2.h>
+#include <EGL/egl.h>
+
+
+
 
 // Define vertex shader source
 const char* vertexShaderSource =
@@ -19,14 +27,81 @@ const char* fragmentShaderSource =
     "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" // Set color to white
     "}\n";
 
+KDThread * pRecvThread = KD_NULL;
+
+void  * kdSendThreadFun(void * arg)
+{
+	printf("SubThreadFunc: Enter\n");
+
+	KDEvent *  pSendEvent 	= KD_NULL;
+
+	KDint looCnt = 0;
+	while(looCnt < 1)
+	{
+		pSendEvent = kdCreateEvent();
+
+		if(KD_NULL == pSendEvent)
+		{
+			printf("SubThreadFunc: Failed to create KdEvent, and the errCode is:%d\n", kdGetError());
+		}
+		else
+		{
+			printf("SubThreadFunc: Successed to create KdEvent\n");
+
+			if(-1 == kdPostThreadEvent(pSendEvent, pRecvThread))
+			{
+				printf("SubTheadFunc: Failed to send KdEvent, and the errCode is:%d\n", kdGetError());
+			}
+			else
+			{
+				printf("SubTheadFunc: Successed to send KdEvent\n");
+			}
+		}
+		//sleep(5);
+		looCnt++;
+	}
+
+	return KD_NULL;
+}
+
+KDint kdMain(KDint argc, const KDchar *const *argv)
+{
+	KDThread 		* pSendThread 	= KD_NULL;
+	const KDEvent  	* pRecvEvent 	= KD_NULL;
+
+	KDust recvTimeout = -1;
+
+	pRecvThread = kdThreadSelf();
+
+	pSendThread = kdThreadCreate(KD_NULL, &kdSendThreadFun, KD_NULL);
+
+	if(KD_NULL == pSendThread)
+	{
+		printf("MainThread: Failed to create sub thread, and errCode is:%d\n", kdGetError());
+	}
+	else
+	{
+		printf("MainThread: Successed to create sub thread\n");
+	}
+
+	while ((pRecvEvent = kdWaitEvent(recvTimeout)) != 0)
+	{
+		printf("MainThread: Successed to recv KdEvent\n");
+
+		kdDefaultEvent(pRecvEvent);
+	}
+
+	printf("MainThread: Failed To Receive Event,and the errCode is:%d\n", kdGetError());
+
+	return 0;
+}
 
 int main(int argc, char *argv[]) {
 
-    std::cout << "QNX MOST render" << std::endl;
-
+    std::cout << "QNX MOST render v2" << std::endl;
     // Get Display Type
     EGLDisplay eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY );
-    eglInitialize( eglDisplay, NULL, NULL);
+    EGLBoolean initialized = eglInitialize( eglDisplay, NULL, NULL);
 
     // typical high-quality attrib list
     EGLint defaultAttribList[] = {
@@ -35,7 +110,7 @@ int main(int argc, char *argv[]) {
     EGL_GREEN_SIZE, 8,
     EGL_BLUE_SIZE, 8,
     // at least 24 bit depth
-    EGL_DEPTH_SIZE, 24,
+    EGL_DEPTH_SIZE, 16,
     EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
     // want opengl-es 2.x conformant CONTEXT
     EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
@@ -45,17 +120,24 @@ int main(int argc, char *argv[]) {
     EGLint numConfigs;
     EGLConfig config;
 
-    eglChooseConfig(eglDisplay, defaultAttribList,
+    EGLBoolean initialized2 = eglChooseConfig(eglDisplay, defaultAttribList,
                    &config, 1, &numConfigs);
-
 
     EGLSurface surface;
     EGLint attributes[] = {EGL_WIDTH, 800, EGL_HEIGHT, 480, EGL_NONE};
-    surface = eglCreateWindowSurface(eglDisplay, config, 0, attributes);
+    surface = eglCreateWindowSurface(eglDisplay, NULL, 0, attributes);
     if (surface == EGL_NO_SURFACE) {
-        std::cerr << "Failed to create EGL window surface" << std::endl;
+        std::cerr << "Failed to create EGL window surface " << initialized << initialized2 << std::endl;
         return EXIT_FAILURE;
     }
+
+    KDWindow *m_pWindow = kdCreateWindow(eglDisplay, config, KD_NULL);
+    if(!m_pWindow)
+    {
+    	std::cerr << "Failed to create KD window surface" << std::endl;
+    	return false;
+    }
+
 
     EGLContext context = eglCreateContext(eglDisplay, config, EGL_NO_CONTEXT, NULL);
     if (context == EGL_NO_CONTEXT) {

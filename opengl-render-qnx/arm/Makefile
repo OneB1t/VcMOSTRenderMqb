@@ -1,9 +1,4 @@
-LIST=CPU
-LIBS+=kd
-LIBS+=egl
-LIBS+=glesv2
-LIBS+=gf
-LIBS+=m
+LIST=VARIANT
 ifndef QRECURSE
 QRECURSE=recurse.mk
 ifdef QCONFIG
