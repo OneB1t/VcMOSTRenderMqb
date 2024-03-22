@@ -45,6 +45,7 @@
 </buildTargets>
 </storageModule>
 <storageModule moduleId="org.eclipse.cdt.core.language.mapping"/>
+<storageModule moduleId="org.eclipse.cdt.internal.ui.text.commentOwnerProjectMappings"/>
 <storageModule moduleId="com.qnx.tools.ide.qde.core.QNXProjectProperties">
 <makefile value="Makefile"/>
 <command value="make"/>
@@ -56,8 +57,10 @@
 <parallel_build value="false"/>
 <parallel_build_number value="1"/>
 <active_configurations>
-<configuration value="_armle-v7_g"/>
 <configuration indexing="true" value="_armle-v7_r"/>
+<configuration value="_armle-v7_g"/>
+<configuration value="_x86_g"/>
+<configuration value="_x86_r"/>
 </active_configurations>
 </storageModule>
 </cconfiguration>

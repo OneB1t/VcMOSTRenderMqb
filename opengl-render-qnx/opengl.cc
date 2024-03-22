@@ -6,12 +6,9 @@
 #include <sys/keycodes.h>
 #include <time.h>
 
-#include <KD/kd.h>
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
-
-
-
+#include <dlfcn.h>   // for dynamic loading functions such as dlopen, dlsym, and dlclose
 
 // Define vertex shader source
 const char* vertexShaderSource =
@@ -27,123 +24,127 @@ const char* fragmentShaderSource =
     "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" // Set color to white
     "}\n";
 
-KDThread * pRecvThread = KD_NULL;
-
-void  * kdSendThreadFun(void * arg)
+static EGLenum checkErrorEGL(const char* msg)
 {
-	printf("SubThreadFunc: Enter\n");
-
-	KDEvent *  pSendEvent 	= KD_NULL;
-
-	KDint looCnt = 0;
-	while(looCnt < 1)
-	{
-		pSendEvent = kdCreateEvent();
-
-		if(KD_NULL == pSendEvent)
-		{
-			printf("SubThreadFunc: Failed to create KdEvent, and the errCode is:%d\n", kdGetError());
-		}
-		else
-		{
-			printf("SubThreadFunc: Successed to create KdEvent\n");
-
-			if(-1 == kdPostThreadEvent(pSendEvent, pRecvThread))
-			{
-				printf("SubTheadFunc: Failed to send KdEvent, and the errCode is:%d\n", kdGetError());
-			}
-			else
-			{
-				printf("SubTheadFunc: Successed to send KdEvent\n");
-			}
-		}
-		//sleep(5);
-		looCnt++;
-	}
-
-	return KD_NULL;
-}
-
-KDint kdMain(KDint argc, const KDchar *const *argv)
-{
-	KDThread 		* pSendThread 	= KD_NULL;
-	const KDEvent  	* pRecvEvent 	= KD_NULL;
-
-	KDust recvTimeout = -1;
-
-	pRecvThread = kdThreadSelf();
-
-	pSendThread = kdThreadCreate(KD_NULL, &kdSendThreadFun, KD_NULL);
-
-	if(KD_NULL == pSendThread)
-	{
-		printf("MainThread: Failed to create sub thread, and errCode is:%d\n", kdGetError());
-	}
-	else
-	{
-		printf("MainThread: Successed to create sub thread\n");
-	}
-
-	while ((pRecvEvent = kdWaitEvent(recvTimeout)) != 0)
-	{
-		printf("MainThread: Successed to recv KdEvent\n");
-
-		kdDefaultEvent(pRecvEvent);
-	}
-
-	printf("MainThread: Failed To Receive Event,and the errCode is:%d\n", kdGetError());
-
-	return 0;
+    static const char* errmsg[] =
+    {
+        "EGL function succeeded",
+        "EGL is not initialized, or could not be initialized, for the specified display",
+        "EGL cannot access a requested resource",
+        "EGL failed to allocate resources for the requested operation",
+        "EGL fail to access an unrecognized attribute or attribute value was passed in an attribute list",
+        "EGLConfig argument does not name a valid EGLConfig",
+        "EGLContext argument does not name a valid EGLContext",
+        "EGL current surface of the calling thread is no longer valid",
+        "EGLDisplay argument does not name a valid EGLDisplay",
+        "EGL arguments are inconsistent",
+        "EGLNativePixmapType argument does not refer to a valid native pixmap",
+        "EGLNativeWindowType argument does not refer to a valid native window",
+        "EGL one or more argument values are invalid",
+        "EGLSurface argument does not name a valid surface configured for rendering",
+        "EGL power management event has occurred",
+    };
+    EGLenum error = eglGetError();
+    fprintf(stderr, "%s: %s\n", msg, errmsg[error - EGL_SUCCESS]);
+    return error;
 }
 
 int main(int argc, char *argv[]) {
 
     std::cout << "QNX MOST render v2" << std::endl;
-    // Get Display Type
-    EGLDisplay eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY );
-    EGLBoolean initialized = eglInitialize( eglDisplay, NULL, NULL);
 
-    // typical high-quality attrib list
-    EGLint defaultAttribList[] = {
-    // 32 bit color
-    EGL_RED_SIZE, 8,
-    EGL_GREEN_SIZE, 8,
-    EGL_BLUE_SIZE, 8,
-    // at least 24 bit depth
-    EGL_DEPTH_SIZE, 16,
-    EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-    // want opengl-es 2.x conformant CONTEXT
-    EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-    EGL_NONE
+    void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
+     if (!func_handle) {
+         fprintf(stderr, "Error: %s\n", dlerror());
+         return 1; // Exit with error
+     }
+
+    // Load the function pointer
+        void (*display_init)(int, int) = (void (*)(int, int))dlsym(func_handle, "display_init");
+       if (!display_init) {
+           fprintf(stderr, "Error: %s\n", dlerror());
+           dlclose(func_handle); // Close the handle before returning
+           return 1; // Exit with error
+       }
+
+       // Call the function
+       display_init(0,0); // DONE
+
+       // Close the handle
+       if (dlclose(func_handle) != 0) {
+           fprintf(stderr, "Error: %s\n", dlerror());
+           return 1; // Exit with error
+       }
+
+
+    EGLDisplay eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY ); // DONE
+    eglInitialize( eglDisplay, 0, 0); // DONE
+
+    // Specify EGL configurations
+    EGLint config_attribs[] = {
+        EGL_RED_SIZE, 8,
+        EGL_GREEN_SIZE, 8,
+        EGL_BLUE_SIZE, 8,
+        EGL_ALPHA_SIZE, 8,
+        EGL_NONE
     };
 
-    EGLint numConfigs;
-    EGLConfig config;
-
-    EGLBoolean initialized2 = eglChooseConfig(eglDisplay, defaultAttribList,
-                   &config, 1, &numConfigs);
-
-    EGLSurface surface;
-    EGLint attributes[] = {EGL_WIDTH, 800, EGL_HEIGHT, 480, EGL_NONE};
-    surface = eglCreateWindowSurface(eglDisplay, NULL, 0, attributes);
-    if (surface == EGL_NO_SURFACE) {
-        std::cerr << "Failed to create EGL window surface " << initialized << initialized2 << std::endl;
-        return EXIT_FAILURE;
+    EGLConfig* configs = new EGLConfig[5];
+    EGLint num_configs;
+    EGLNativeWindowType windowEgl;
+	int kdWindow;
+    if (!eglChooseConfig(eglDisplay, config_attribs, configs, 1, &num_configs)) { // DONE
+        fprintf(stderr, "Error: Failed to choose EGL configuration\n");
+        return 1; // Exit with error
     }
 
-    KDWindow *m_pWindow = kdCreateWindow(eglDisplay, config, KD_NULL);
-    if(!m_pWindow)
-    {
-    	std::cerr << "Failed to create KD window surface" << std::endl;
-    	return false;
-    }
+    void* func_handle2 = dlopen("libdisplayinit.so", RTLD_LAZY);
+     if (!func_handle2) {
+         fprintf(stderr, "Error: %s\n", dlerror());
+         return 1; // Exit with error
+     }
+
+		void (*display_create_window)(
+			EGLDisplay,  // DAT_00102f68: void* parameter
+			EGLConfig,  // local_24[0]: void* parameter
+			int,  // 800: void* parameter
+			int,  // 0x1e0: void* parameter
+			int,  // DAT_00102f0c: void* parameter
+			EGLNativeWindowType*,  // &local_2c: void* parameter
+			int*   // &DAT_00102f78: void* parameter
+		) = (void (*)(EGLDisplay, EGLConfig, int, int, int, EGLNativeWindowType*, int*))dlsym(func_handle2, "display_create_window");
+		if (!display_create_window) {
+			   fprintf(stderr, "Error: %s\n", dlerror());
+			   dlclose(func_handle2); // Close the handle before returning
+			   return 1; // Exit with error
+		   }
+
+    	   display_create_window(eglDisplay,configs[0],800,480,3,&windowEgl,&kdWindow);
 
 
-    EGLContext context = eglCreateContext(eglDisplay, config, EGL_NO_CONTEXT, NULL);
+       // Close the handle
+       if (dlclose(func_handle2) != 0) {
+           fprintf(stderr, "Error: %s\n", dlerror());
+           return 1; // Exit with error
+       }
+
+       EGLSurface surface;
+       surface = eglCreateWindowSurface(eglDisplay, configs[0], windowEgl, 0);
+       if (surface == EGL_NO_SURFACE) {
+       	checkErrorEGL("eglCreateWindowSurface");
+           fprintf(stderr, "Create surface failed: 0x%x\n", surface);
+           exit(EXIT_FAILURE);
+       }
+
+    EGLContext context = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, NULL);
+    checkErrorEGL("eglCreateContext");
     if (context == EGL_NO_CONTEXT) {
         std::cerr << "Failed to create EGL context" << std::endl;
         return EXIT_FAILURE;
     }
+
+
+
 
     EGLBoolean madeCurrent = eglMakeCurrent(eglDisplay, surface, surface, context);
     if (madeCurrent == EGL_FALSE) {

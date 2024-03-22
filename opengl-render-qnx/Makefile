@@ -1,5 +1,4 @@
 LIST=CPU
-LIBS+=kd
 LIBS+=egl
 LIBS+=glesv2
 LIBS+=gf
