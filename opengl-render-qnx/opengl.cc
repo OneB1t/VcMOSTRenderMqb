@@ -10,19 +10,29 @@
 #include <EGL/egl.h>
 #include <dlfcn.h>   // for dynamic loading functions such as dlopen, dlsym, and dlclose
 
-// Define vertex shader source
+// Vertex shader source
 const char* vertexShaderSource =
-    "attribute vec2 position;\n"
-    "void main() {\n"
-    "  gl_Position = vec4(position, 0.0, 1.0);\n"
-    "}\n";
+    "attribute vec4 vPosition;    \n"
+    "void main()                  \n"
+    "{                            \n"
+    "   gl_Position = vPosition;  \n"
+    "   gl_PointSize = 10.0;      \n" // Point size
+    "}                            \n";
 
-// Define fragment shader source
+// Fragment shader source
 const char* fragmentShaderSource =
-    "precision mediump float;\n"
-    "void main() {\n"
-    "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);\n" // Set color to white
-    "}\n";
+    "precision mediump float;  \n"
+    "void main()               \n"
+    "{                         \n"
+    "  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n" // Color
+    "}                         \n";
+GLuint programObject;
+EGLDisplay eglDisplay;
+EGLConfig eglConfig;
+EGLSurface eglSurface;
+EGLContext eglContext;
+GLfloat dotX = 0.0f;
+GLfloat dotY = 0.0f;
 
 static EGLenum checkErrorEGL(const char* msg)
 {
@@ -47,6 +57,62 @@ static EGLenum checkErrorEGL(const char* msg)
     EGLenum error = eglGetError();
     fprintf(stderr, "%s: %s\n", msg, errmsg[error - EGL_SUCCESS]);
     return error;
+}
+
+// Initialize OpenGL ES
+void Init() {
+    // Load and compile shaders
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    // Create program object
+    programObject = glCreateProgram();
+    glAttachShader(programObject, vertexShader);
+    glAttachShader(programObject, fragmentShader);
+    glLinkProgram(programObject);
+
+    // Set clear color to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    srand(time(NULL));
+
+}
+
+// Draw frame
+void Draw() {
+    // Set viewport
+    glViewport(0, 0, 800, 480);
+
+    // Clear the color buffer
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    // Use the program object
+    glUseProgram(programObject);
+
+    // Move the dot horizontally
+    dotX += 0.01f; // Increment x-coordinate to move dot horizontally
+
+    // Wrap around to the left side when dot goes off the screen
+    if (dotX > 1.0f) {
+        dotX = -1.0f;
+    }
+
+    // Define vertex data (position of the dot)
+    GLfloat vertices[] = { dotX, dotY };
+
+    // Load the vertex data
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertices);
+    glEnableVertexAttribArray(0);
+
+    // Draw a single point
+    glDrawArrays(GL_POINTS, 0, 1);
+
+    // Swap buffers
+    eglSwapBuffers(eglDisplay, eglSurface);
 }
 
 int main(int argc, char *argv[]) {
@@ -77,17 +143,19 @@ int main(int argc, char *argv[]) {
        }
 
 
-    EGLDisplay eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY ); // DONE
+    eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY ); // DONE
     eglInitialize( eglDisplay, 0, 0); // DONE
 
     // Specify EGL configurations
-    EGLint config_attribs[] = {
-        EGL_RED_SIZE, 8,
-        EGL_GREEN_SIZE, 8,
-        EGL_BLUE_SIZE, 8,
-        EGL_ALPHA_SIZE, 8,
-        EGL_NONE
-    };
+	EGLint config_attribs[] = {
+		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+		EGL_RED_SIZE, 1,
+		EGL_GREEN_SIZE, 1,
+		EGL_BLUE_SIZE, 1,
+		EGL_ALPHA_SIZE, 1,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_NONE
+	};
 
     EGLConfig* configs = new EGLConfig[5];
     EGLint num_configs;
@@ -97,6 +165,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Error: Failed to choose EGL configuration\n");
         return 1; // Exit with error
     }
+    eglConfig = configs[0];
 
     void* func_handle2 = dlopen("libdisplayinit.so", RTLD_LAZY);
      if (!func_handle2) {
@@ -128,74 +197,45 @@ int main(int argc, char *argv[]) {
            return 1; // Exit with error
        }
 
-       EGLSurface surface;
-       surface = eglCreateWindowSurface(eglDisplay, configs[0], windowEgl, 0);
-       if (surface == EGL_NO_SURFACE) {
+       eglSurface = eglCreateWindowSurface(eglDisplay, configs[0], windowEgl, 0);
+       if (eglSurface == EGL_NO_SURFACE) {
        	checkErrorEGL("eglCreateWindowSurface");
-           fprintf(stderr, "Create surface failed: 0x%x\n", surface);
+           fprintf(stderr, "Create surface failed: 0x%x\n", eglSurface);
            exit(EXIT_FAILURE);
        }
 
-    EGLContext context = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, NULL);
+       const EGLint context_attribs[] = {
+               EGL_CONTEXT_CLIENT_VERSION, 2,
+               EGL_NONE
+       };
+    eglContext = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, context_attribs);
     checkErrorEGL("eglCreateContext");
-    if (context == EGL_NO_CONTEXT) {
+    if (eglContext == EGL_NO_CONTEXT) {
         std::cerr << "Failed to create EGL context" << std::endl;
         return EXIT_FAILURE;
     }
 
-
-
-
-    EGLBoolean madeCurrent = eglMakeCurrent(eglDisplay, surface, surface, context);
+    EGLBoolean madeCurrent = eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
     if (madeCurrent == EGL_FALSE) {
         std::cerr << "Failed to make EGL context current" << std::endl;
         return EXIT_FAILURE;
     }
 
-    // Load and compile shaders
-        GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-        glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-        glCompileShader(vertexShader);
 
-        GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-        glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-        glCompileShader(fragmentShader);
+    // Initialize OpenGL ES
+    Init();
 
-        // Create shader program
-        GLuint shaderProgram = glCreateProgram();
-        glAttachShader(shaderProgram, vertexShader);
-        glAttachShader(shaderProgram, fragmentShader);
-        glLinkProgram(shaderProgram);
-        glUseProgram(shaderProgram);
+    while(true)
+    {
+    	// Draw
+    	Draw();
 
-        // Set up vertex data and attributes
-        GLfloat vertices[] = {
-            0.0f, 0.0f  // Center of the screen
-        };
-        GLuint vbo;
-        glGenBuffers(1, &vbo);
-        glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
-        GLint posAttrib = glGetAttribLocation(shaderProgram, "position");
-        glEnableVertexAttribArray(posAttrib);
-        glVertexAttribPointer(posAttrib, 2, GL_FLOAT, GL_FALSE, 0, 0);
-
-        while(true)
-        {
-			// Clear the color buffer
-			glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-			glClear(GL_COLOR_BUFFER_BIT);
-
-			// Draw the point
-			glDrawArrays(GL_POINTS, 0, 1);
-        }
-        // Swap buffers (not necessary for pbuffer surface)
-        // eglSwapBuffers(display, surface);
+    }
 
     // Swap buffers
-    eglSwapBuffers(eglDisplay, surface);
-    eglDestroySurface(eglDisplay, surface);
-    eglDestroyContext(eglDisplay, context);
+    eglSwapBuffers(eglDisplay, eglSurface);
+    eglDestroySurface(eglDisplay, eglSurface);
+    eglDestroyContext(eglDisplay, eglContext);
     eglTerminate(eglDisplay);
 
     return EXIT_SUCCESS;
