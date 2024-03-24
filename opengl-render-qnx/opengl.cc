@@ -26,6 +26,7 @@ const char* fragmentShaderSource =
     "{                         \n"
     "  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n" // Color
     "}                         \n";
+
 GLuint programObject;
 EGLDisplay eglDisplay;
 EGLConfig eglConfig;
