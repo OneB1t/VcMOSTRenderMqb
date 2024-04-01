@@ -244,7 +244,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Create EGL Surface
     eglSurface = eglCreateWindowSurface(eglDisplay, eglConfig, hWnd, nullptr);
     eglBindAPI(EGL_OPENGL_ES_API);
-    eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, nullptr);
+
+    EGLint contextAttribs[] = {
+    EGL_CONTEXT_CLIENT_VERSION, 2, // Request OpenGL ES 2.0
+    EGL_NONE // Indicates the end of the attribute list
+    };
+
+    eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttribs);
     eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
 
     // OpenGL ES initialization
