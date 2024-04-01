@@ -5,31 +5,26 @@
 #include <string.h>
 #include <sys/keycodes.h>
 #include <time.h>
+#include "stb_easyfont.hh"
 
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
 #include <dlfcn.h>   // for dynamic loading functions such as dlopen, dlsym, and dlclose
 
-#define STB_TRUETYPE_IMPLEMENTATION  // force following include to generate implementation
-#include "stb_easyfont.h"
-
-int windowWidth = 800;
-int windowHeight = 480;
-
 // Vertex shader source
 const char* vertexShaderSource =
-    "attribute vec4 vPosition;                  \n"
-    "void main()                                \n"
-    "{                                          \n"
+    "attribute vec2 position;    \n"
+    "void main()                  \n"
+    "{                            \n"
     "   gl_Position = vec4(position, 0.0, 1.0); \n"
-    "}                                          \n";
+	"   gl_PointSize = 4.0;      \n" // Point size
+    "}                            \n";
 
 // Fragment shader source
 const char* fragmentShaderSource =
-    "precision mediump float;  \n"
     "void main()               \n"
     "{                         \n"
-    "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);  \n"
+    "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
     "}                         \n";
 
 GLuint programObject;
@@ -37,111 +32,35 @@ EGLDisplay eglDisplay;
 EGLConfig eglConfig;
 EGLSurface eglSurface;
 EGLContext eglContext;
-GLuint shaderProgram;
-
-// Compile shader function
-GLuint compileShader(GLenum type, const char* source) {
-    GLuint shader = glCreateShader(type);
-    glShaderSource(shader, 1, &source, NULL);
-    glCompileShader(shader);
-
-    // Check for compilation errors
-    GLint success;
-    glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
-        char infoLog[512];
-        glGetShaderInfoLog(shader, 512, NULL, infoLog);
-        std::cerr << "Shader compilation error: " << infoLog << std::endl;
-        glDeleteShader(shader);
-        return 0;
-    }
-    return shader;
-}
-
-void print_string(float x, float y, char* text, float r, float g, float b, float size) {
-
-    char inputBuffer[9999]; // ~500 chars
-    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)];
-    GLfloat triangleBuffer[9999];
-    stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
-
-    // Copying data from inputBuffer to floatBuffer
-    for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); ++i) {
-        floatBuffer[i] = *((GLfloat*)(inputBuffer + i * sizeof(GLfloat)));
-    }
-    // calculate movement inside viewport
-    float ndcMovementX = (2.0f * x) / windowWidth;
-    float ndcMovementY = (2.0f * y) / windowHeight;
-
-    int triangleIndex = 0; // Index to keep track of the current position in the triangleBuffer
-    // Convert each quad into two triangles and also apply size and offset to draw it to correct place
-    for (int i = 0; i < sizeof(floatBuffer) / sizeof(GLfloat); i += 8) {
-        // Triangle 1
-        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 2] / size + +ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 3] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
-
-        //// Triangle 2
-        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 6] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 7] / size * -1 + ndcMovementY;
-
-    }
-
-    GLuint vbo;
-    glGenBuffers(1, &vbo);
-    glBindBuffer(GL_ARRAY_BUFFER, vbo);
-    glBufferData(GL_ARRAY_BUFFER, sizeof(triangleBuffer), triangleBuffer, GL_STATIC_DRAW);
-
-    // Specify the layout of the vertex data
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
-    glEnableVertexAttribArray(positionAttribute);
-    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, NULL);
-
-    // Render the triangle
-    glDrawArrays(GL_TRIANGLES, 0, triangleIndex);
-
-    glDeleteBuffers(1, &vbo);
-}
+GLfloat dotX = 0.0f;
+GLfloat dotY = 0.0f;
+int windowWidth = 800;
+int windowHeight = 480;
 
 
-void drawArrow() {
-    // Define the vertices of the arrowhead
-    GLfloat arrowheadVertices[] = {
-        0.0f, 0.5f,    // Top
-        -0.1f, 0.2f,   // Top left
-        0.1f, 0.2f,    // Top right
-        0.0f, 0.0f     // Middle
+static EGLenum checkErrorEGL(const char* msg)
+{
+    static const char* errmsg[] =
+    {
+        "EGL function succeeded",
+        "EGL is not initialized, or could not be initialized, for the specified display",
+        "EGL cannot access a requested resource",
+        "EGL failed to allocate resources for the requested operation",
+        "EGL fail to access an unrecognized attribute or attribute value was passed in an attribute list",
+        "EGLConfig argument does not name a valid EGLConfig",
+        "EGLContext argument does not name a valid EGLContext",
+        "EGL current surface of the calling thread is no longer valid",
+        "EGLDisplay argument does not name a valid EGLDisplay",
+        "EGL arguments are inconsistent",
+        "EGLNativePixmapType argument does not refer to a valid native pixmap",
+        "EGLNativeWindowType argument does not refer to a valid native window",
+        "EGL one or more argument values are invalid",
+        "EGLSurface argument does not name a valid surface configured for rendering",
+        "EGL power management event has occurred",
     };
-
-    // Define the vertices of the shaft
-    GLfloat shaftVertices[] = {
-        0.0f, 0.0f,    // Middle
-        0.0f, -0.5f,   // Bottom
-        -0.05f, -0.5f, // Bottom left
-        0.05f, -0.5f   // Bottom right
-    };
-
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
-    // Set up vertex attribute pointer for the arrowhead
-    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, arrowheadVertices);
-    glEnableVertexAttribArray(positionAttribute);
-
-    // Draw the arrowhead
-    glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-
-    // Set up vertex attribute pointer for the shaft
-    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, shaftVertices);
-    glEnableVertexAttribArray(positionAttribute);
-
-    // Draw the shaft
-    glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    EGLenum error = eglGetError();
+    fprintf(stderr, "%s: %s\n", msg, errmsg[error - EGL_SUCCESS]);
+    return error;
 }
 
 const int NUM_SEGMENTS = 30;
@@ -183,7 +102,7 @@ void drawRing() {
         outerCircleVertices[i * 2] *= aspectRatio;
         innerCircleVertices[i * 2] *= aspectRatio;
     }
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
+    GLint positionAttribute = glGetAttribLocation(programObject, "position");
     // Set up vertex attribute pointer for the outer circle
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, outerCircleVertices);
     glEnableVertexAttribArray(positionAttribute);
@@ -199,54 +118,98 @@ void drawRing() {
     glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
 }
 
-static EGLenum checkErrorEGL(const char* msg)
-{
-    static const char* errmsg[] =
-    {
-        "EGL function succeeded",
-        "EGL is not initialized, or could not be initialized, for the specified display",
-        "EGL cannot access a requested resource",
-        "EGL failed to allocate resources for the requested operation",
-        "EGL fail to access an unrecognized attribute or attribute value was passed in an attribute list",
-        "EGLConfig argument does not name a valid EGLConfig",
-        "EGLContext argument does not name a valid EGLContext",
-        "EGL current surface of the calling thread is no longer valid",
-        "EGLDisplay argument does not name a valid EGLDisplay",
-        "EGL arguments are inconsistent",
-        "EGLNativePixmapType argument does not refer to a valid native pixmap",
-        "EGLNativeWindowType argument does not refer to a valid native window",
-        "EGL one or more argument values are invalid",
-        "EGLSurface argument does not name a valid surface configured for rendering",
-        "EGL power management event has occurred",
-    };
-    EGLenum error = eglGetError();
-    fprintf(stderr, "%s: %s\n", msg, errmsg[error - EGL_SUCCESS]);
-    return error;
+void print_string(float x, float y, char* text, float r, float g, float b, float size) {
+    char inputBuffer[2000] = {0}; // ~500 chars
+    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)] = {0};
+    GLfloat triangleBuffer[2000] = {0};
+    int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
+
+
+    //std::cout << number << std::endl;
+    // Copying data from inputBuffer to floatBuffer
+    for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); ++i) {
+        floatBuffer[i] = *((GLfloat*)(inputBuffer + i * sizeof(GLfloat)));
+    }
+    // calculate movement inside viewport
+    float ndcMovementX = (2.0f * x) / windowWidth;
+    float ndcMovementY = (2.0f * y) / windowHeight;
+
+    int triangleIndex = 0; // Index to keep track of the current position in the triangleBuffer
+    // Convert each quad into two triangles and also apply size and offset to draw it to correct place
+    for (int i = 0; i < sizeof(floatBuffer) / sizeof(GLfloat); i += 8) {
+        // Triangle 1
+        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 2] / size + +ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 3] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
+
+        //// Triangle 2
+        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 6] / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = floatBuffer[i + 7] / size * -1 + ndcMovementY;
+
+    }
+
+    glUseProgram(programObject);
+    GLuint vbo;
+    glGenBuffers(1, &vbo);
+    glBindBuffer(GL_ARRAY_BUFFER, vbo);
+    glBufferData(GL_ARRAY_BUFFER, sizeof(triangleBuffer), triangleBuffer, GL_STATIC_DRAW);
+
+    // Specify the layout of the vertex data
+    GLint positionAttribute = glGetAttribLocation(programObject, "position");
+    glEnableVertexAttribArray(positionAttribute);
+    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+   // glEnableVertexAttribArray(0);
+
+    // Render the triangle
+    glDrawArrays(GL_TRIANGLES, 0, triangleIndex);
+
+    glDeleteBuffers(1, &vbo);
 }
+
 
 // Initialize OpenGL ES
 void Init() {
     // Load and compile shaders
-	// OpenGL ES initialization
-	glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
 
-	// Compile vertex shader
-	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-	glCompileShader(vertexShader);
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
 
-	// Compile fragment shader
-	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-	glCompileShader(fragmentShader);
+    // Create program object
+    programObject = glCreateProgram();
+    glAttachShader(programObject, vertexShader);
+    glAttachShader(programObject, fragmentShader);
+    glLinkProgram(programObject);
 
-	// Create shader program and link shaders
-	shaderProgram = glCreateProgram();
-	glAttachShader(shaderProgram, vertexShader);
-	glAttachShader(shaderProgram, fragmentShader);
-	glLinkProgram(shaderProgram);
-	glUseProgram(shaderProgram);
+    // Set clear color to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 
+}
+
+// Draw frame
+void Draw() {
+    // Set viewport
+    //glViewport(0, 0, 800, 480);
+    //glClear(GL_COLOR_BUFFER_BIT);
+    //glUseProgram(programObject);
+    dotX += 0.01f; // Increment x-coordinate to move dot horizontally
+    if (dotX > 1.0f) {
+        dotX = -1.0f;
+    }
+    GLfloat vertices[] = { dotX, dotY };
+    //glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertices);
+    //glEnableVertexAttribArray(0);
+    //glDrawArrays(GL_POINTS, 0, 1);
 }
 
 int main(int argc, char *argv[]) {
@@ -281,15 +244,15 @@ int main(int argc, char *argv[]) {
     eglInitialize( eglDisplay, 0, 0); // DONE
 
     // Specify EGL configurations
-    EGLint config_attribs[] = {
-        EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
-        EGL_RED_SIZE, 1,
-        EGL_GREEN_SIZE, 1,
-        EGL_BLUE_SIZE, 1,
-        EGL_ALPHA_SIZE, 1,
-        EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
-        EGL_NONE
-    };
+	EGLint config_attribs[] = {
+		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
+		EGL_RED_SIZE, 1,
+		EGL_GREEN_SIZE, 1,
+		EGL_BLUE_SIZE, 1,
+		EGL_ALPHA_SIZE, 1,
+		EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT,
+		EGL_NONE
+	};
 
     EGLConfig* configs = new EGLConfig[5];
     EGLint num_configs;
@@ -322,7 +285,7 @@ int main(int argc, char *argv[]) {
 			   return 1; // Exit with error
 		   }
 
-    	   display_create_window(eglDisplay,configs[0],windowWidth,windowHeight,3,&windowEgl,&kdWindow);
+    	   display_create_window(eglDisplay,configs[0],800,480,3,&windowEgl,&kdWindow);
 
 
        // Close the handle
@@ -338,11 +301,11 @@ int main(int argc, char *argv[]) {
            exit(EXIT_FAILURE);
        }
 
-       EGLint contextAttribs[] = {
-       EGL_CONTEXT_CLIENT_VERSION, 2, // Request OpenGL ES 2.0
-       EGL_NONE // Indicates the end of the attribute list
+       const EGLint context_attribs[] = {
+               EGL_CONTEXT_CLIENT_VERSION, 2,
+               EGL_NONE
        };
-    eglContext = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, contextAttribs);
+    eglContext = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, context_attribs);
     checkErrorEGL("eglCreateContext");
     if (eglContext == EGL_NO_CONTEXT) {
         std::cerr << "Failed to create EGL context" << std::endl;
@@ -358,10 +321,11 @@ int main(int argc, char *argv[]) {
 
     // Initialize OpenGL ES
     Init();
-    srand(time(NULL)); // Seed the random number generator
+
     int frameCount = 0;
     double fps = 0.0;
     time_t startTime = time(NULL);
+    // Main loop
     while (true)
     {
         frameCount++;
@@ -381,19 +345,21 @@ int main(int argc, char *argv[]) {
         glClear(GL_COLOR_BUFFER_BIT); // clear all
         char test[10]; // Adjust size accordingly
         snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-
+        print_string(-330, 200, test, 1, 1, 1,50);
         //drawArrow();
         drawRing();
-        print_string(-330, 200, test, 1, 1, 1,50);
-        char speed[15] = ""; // Adjust size accordingly
+        char speed[12]; // Adjust size accordingly
          snprintf(speed, sizeof(speed), "%i Frame", frameCount);
 
-         print_string(-150, -200, speed, 1, 1, 1,50);
-        //print_string(-100, 100, test, 1, 1, 1, 50);
+    	Draw();
+    	//drawRing();
+    	print_string(-150, 0, speed, 1, 1, 1,50);
         eglSwapBuffers(eglDisplay, eglSurface);
 
     }
 
+    // Swap buffers
+    eglSwapBuffers(eglDisplay, eglSurface);
     eglDestroySurface(eglDisplay, eglSurface);
     eglDestroyContext(eglDisplay, eglContext);
     eglTerminate(eglDisplay);
