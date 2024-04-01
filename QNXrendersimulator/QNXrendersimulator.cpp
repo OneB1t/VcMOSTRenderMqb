@@ -12,9 +12,7 @@ EGLSurface eglSurface;
 EGLContext eglContext;
 GLuint shaderProgram;
 
-static char inputBuffer[9999]; // ~500 chars
-GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)];
-GLfloat triangleBuffer[9999];
+
 GLuint vertexBuffer; // Define vertex buffer object ID
 
 int windowWidth = 800;
@@ -32,7 +30,7 @@ const char* vertexShaderSource = R"(
 // Shader source code for fragment shader
 const char* fragmentShaderSource = R"(
         void main() {
-            gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
+            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // White color
         }
     )";
 
@@ -55,14 +53,12 @@ GLuint compileShader(GLenum type, const char* source) {
     return shader;
 }
 
-// Function to generate random float between min and max
-float randomFloat(float min, float max) {
-    return min + static_cast<float>(rand()) / (static_cast<float>(RAND_MAX / (max - min)));
-}
-
 void print_string(float x, float y, char* text, float r, float g, float b, float size) {
-    int num_quads;
-    num_quads = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
+
+    char inputBuffer[9999]; // ~500 chars
+    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)];
+    GLfloat triangleBuffer[9999];
+    stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
 
     // Copying data from inputBuffer to floatBuffer
     for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); ++i) {
@@ -144,15 +140,18 @@ void drawArrow() {
 }
 
 float M_PI = 3.1421;
+const int NUM_SEGMENTS = 30;
 // Function to render the ring
 void drawRing() {
+    // Clear the color buffer
+    glClear(GL_COLOR_BUFFER_BIT);
+
     // Set up radius and center of the ring
     float outerRadius = 0.5f;
     float innerRadius = 0.4f;
     float centerX = 0.0f;
     float centerY = 0.0f;
 
-    const int NUM_SEGMENTS = 30;
     // Define vertices array for the outer circle
     GLfloat outerCircleVertices[(NUM_SEGMENTS + 1) * 2];
     for (int i = 0; i < NUM_SEGMENTS; ++i) {
@@ -171,8 +170,15 @@ void drawRing() {
         innerCircleVertices[i * 2 + 1] = centerY + innerRadius * sin(angle);
     }
     innerCircleVertices[NUM_SEGMENTS * 2] = innerCircleVertices[0];
-    
     innerCircleVertices[NUM_SEGMENTS * 2 + 1] = innerCircleVertices[1];
+
+    float aspectRatio = (float)windowHeight / windowWidth;
+
+    // Adjust vertices for aspect ratio
+    for (int i = 0; i <= NUM_SEGMENTS; ++i) {
+        outerCircleVertices[i * 2] *= aspectRatio;
+        innerCircleVertices[i * 2] *= aspectRatio;
+    }
     GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
     // Set up vertex attribute pointer for the outer circle
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, outerCircleVertices);
@@ -185,9 +191,10 @@ void drawRing() {
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, innerCircleVertices);
     glEnableVertexAttribArray(positionAttribute);
 
-    // Draw the ring
+    // Draw the inner circle
     glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
 }
+
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
@@ -273,7 +280,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     glLinkProgram(shaderProgram);
     glUseProgram(shaderProgram);
 
-
     srand(time(nullptr)); // Seed the random number generator
     int frameCount = 0;
     double fps = 0.0;
@@ -296,13 +302,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             frameCount = 0;
             startTime = currentTime;
         }
-
+        glClear(GL_COLOR_BUFFER_BIT); // clear all
         char test[10]; // Adjust size accordingly
         snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-        glClear(GL_COLOR_BUFFER_BIT); // clear all
+
         //drawArrow();
         drawRing();
         print_string(-330, 200, test, 1, 1, 1,50);
+        char speed[15] = ""; // Adjust size accordingly
+         snprintf(speed, sizeof(speed), "%i Frame", frameCount);
+
+         print_string(-150, -200, speed, 1, 1, 1,50);
         //print_string(-100, 100, test, 1, 1, 1, 50);
         eglSwapBuffers(eglDisplay, eglSurface);      
 
