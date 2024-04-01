@@ -10,29 +10,27 @@ EGLDisplay eglDisplay;
 EGLConfig eglConfig;
 EGLSurface eglSurface;
 EGLContext eglContext;
-GLuint shaderProgram;
-
-
-GLuint vertexBuffer; // Define vertex buffer object ID
-
+GLfloat dotX = 0.0f;
+GLfloat dotY = 0.0f;
 int windowWidth = 800;
 int windowHeight = 480;
 
 
-// Shader source code for vertex shader
-const char* vertexShaderSource = R"(
-        attribute vec2 position;
-        void main() {
-            gl_Position = vec4(position, 0.0, 1.0);
-        }
-    )";
+// Vertex shader source
+const char* vertexShaderSource =
+"attribute vec2 position;    \n"
+"void main()                  \n"
+"{                            \n"
+"   gl_Position = vec4(position, 0.0, 1.0); \n"
+"   gl_PointSize = 4.0;      \n" // Point size
+"}                            \n";
 
-// Shader source code for fragment shader
-const char* fragmentShaderSource = R"(
-        void main() {
-            gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); // White color
-        }
-    )";
+// Fragment shader source
+const char* fragmentShaderSource =
+"void main()               \n"
+"{                         \n"
+"  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
+"}                         \n";
 
 // Compile shader function
 GLuint compileShader(GLenum type, const char* source) {
@@ -54,12 +52,13 @@ GLuint compileShader(GLenum type, const char* source) {
 }
 
 void print_string(float x, float y, char* text, float r, float g, float b, float size) {
+    char inputBuffer[2000] = { 0 }; // ~500 chars
+    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)] = { 0 };
+    GLfloat triangleBuffer[2000] = { 0 };
+    int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
 
-    char inputBuffer[9999]; // ~500 chars
-    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)];
-    GLfloat triangleBuffer[9999];
-    stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
 
+    //std::cout << number << std::endl;
     // Copying data from inputBuffer to floatBuffer
     for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); ++i) {
         floatBuffer[i] = *((GLfloat*)(inputBuffer + i * sizeof(GLfloat)));
@@ -89,22 +88,45 @@ void print_string(float x, float y, char* text, float r, float g, float b, float
 
     }
 
+
     GLuint vbo;
     glGenBuffers(1, &vbo);
     glBindBuffer(GL_ARRAY_BUFFER, vbo);
     glBufferData(GL_ARRAY_BUFFER, sizeof(triangleBuffer), triangleBuffer, GL_STATIC_DRAW);
 
     // Specify the layout of the vertex data
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
+    GLint positionAttribute = glGetAttribLocation(programObject, "position");
     glEnableVertexAttribArray(positionAttribute);
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, NULL);
+    // glEnableVertexAttribArray(0);
 
-    // Render the triangle
+     // Render the triangle
     glDrawArrays(GL_TRIANGLES, 0, triangleIndex);
 
     glDeleteBuffers(1, &vbo);
 }
 
+// Initialize OpenGL ES
+void Init() {
+    // Load and compile shaders
+    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShader);
+
+    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShader);
+
+    // Create program object
+    programObject = glCreateProgram();
+    glAttachShader(programObject, vertexShader);
+    glAttachShader(programObject, fragmentShader);
+    glLinkProgram(programObject);
+
+    // Set clear color to black
+    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+
+}
 
 void drawArrow() {
     // Define the vertices of the arrowhead
@@ -123,7 +145,7 @@ void drawArrow() {
         0.05f, -0.5f   // Bottom right
     };
 
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
+    GLint positionAttribute = glGetAttribLocation(programObject, "position");
     // Set up vertex attribute pointer for the arrowhead
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, arrowheadVertices);
     glEnableVertexAttribArray(positionAttribute);
@@ -139,13 +161,9 @@ void drawArrow() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
-float M_PI = 3.1421;
 const int NUM_SEGMENTS = 30;
 // Function to render the ring
 void drawRing() {
-    // Clear the color buffer
-    glClear(GL_COLOR_BUFFER_BIT);
-
     // Set up radius and center of the ring
     float outerRadius = 0.5f;
     float innerRadius = 0.4f;
@@ -155,7 +173,7 @@ void drawRing() {
     // Define vertices array for the outer circle
     GLfloat outerCircleVertices[(NUM_SEGMENTS + 1) * 2];
     for (int i = 0; i < NUM_SEGMENTS; ++i) {
-        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * M_PI;
+        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * 3.1421;
         outerCircleVertices[i * 2] = centerX + outerRadius * cos(angle);
         outerCircleVertices[i * 2 + 1] = centerY + outerRadius * sin(angle);
     }
@@ -165,7 +183,7 @@ void drawRing() {
     // Define vertices array for the inner circle
     GLfloat innerCircleVertices[(NUM_SEGMENTS + 1) * 2];
     for (int i = 0; i < NUM_SEGMENTS; ++i) {
-        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * M_PI;
+        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * 3.1421;
         innerCircleVertices[i * 2] = centerX + innerRadius * cos(angle);
         innerCircleVertices[i * 2 + 1] = centerY + innerRadius * sin(angle);
     }
@@ -179,7 +197,7 @@ void drawRing() {
         outerCircleVertices[i * 2] *= aspectRatio;
         innerCircleVertices[i * 2] *= aspectRatio;
     }
-    GLint positionAttribute = glGetAttribLocation(shaderProgram, "position");
+    GLint positionAttribute = glGetAttribLocation(programObject, "position");
     // Set up vertex attribute pointer for the outer circle
     glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, outerCircleVertices);
     glEnableVertexAttribArray(positionAttribute);
@@ -209,7 +227,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
 
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     LPCWSTR className = L"OpenGL_ES_Window-QNXrender";
-
+    MSG msg;
     // Register class
     WNDCLASS wc = { 0 };
     wc.lpfnWndProc = WndProc;
@@ -260,32 +278,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     eglContext = eglCreateContext(eglDisplay, eglConfig, EGL_NO_CONTEXT, contextAttribs);
     eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
 
-    // OpenGL ES initialization
-    glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    // Initialize OpenGL ES
+    Init();
 
-    // Compile vertex shader
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
-
-    // Compile fragment shader
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
-
-    // Create shader program and link shaders
-    shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
-    glUseProgram(shaderProgram);
-
-    srand(time(nullptr)); // Seed the random number generator
     int frameCount = 0;
     double fps = 0.0;
     time_t startTime = time(NULL);
     // Main loop
-    MSG msg;
     while (true)
     {
         frameCount++;
@@ -303,18 +302,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             startTime = currentTime;
         }
         glClear(GL_COLOR_BUFFER_BIT); // clear all
+        glUseProgram(programObject);
         char test[10]; // Adjust size accordingly
         snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-
+        print_string(-350, 200, test, 1, 1, 1, 50);
         //drawArrow();
         drawRing();
-        print_string(-330, 200, test, 1, 1, 1,50);
-        char speed[15] = ""; // Adjust size accordingly
-         snprintf(speed, sizeof(speed), "%i Frame", frameCount);
+        char speed[12]; // Adjust size accordingly
+        snprintf(speed, sizeof(speed), "%i Frame", frameCount);
 
-         print_string(-150, -200, speed, 1, 1, 1,50);
-        //print_string(-100, 100, test, 1, 1, 1, 50);
-        eglSwapBuffers(eglDisplay, eglSurface);      
+        //drawRing();
+        print_string(-150, 0, speed, 1, 1, 1, 50);
+        eglSwapBuffers(eglDisplay, eglSurface);
 
     }
 
