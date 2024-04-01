@@ -10,8 +10,6 @@ EGLDisplay eglDisplay;
 EGLConfig eglConfig;
 EGLSurface eglSurface;
 EGLContext eglContext;
-GLfloat dotX = 0.0f;
-GLfloat dotY = 0.0f;
 int windowWidth = 800;
 int windowHeight = 480;
 
@@ -53,38 +51,31 @@ GLuint compileShader(GLenum type, const char* source) {
 
 void print_string(float x, float y, char* text, float r, float g, float b, float size) {
     char inputBuffer[2000] = { 0 }; // ~500 chars
-    GLfloat floatBuffer[sizeof(inputBuffer) / sizeof(GLfloat)] = { 0 };
     GLfloat triangleBuffer[2000] = { 0 };
     int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
 
-
-    //std::cout << number << std::endl;
-    // Copying data from inputBuffer to floatBuffer
-    for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); ++i) {
-        floatBuffer[i] = *((GLfloat*)(inputBuffer + i * sizeof(GLfloat)));
-    }
     // calculate movement inside viewport
     float ndcMovementX = (2.0f * x) / windowWidth;
     float ndcMovementY = (2.0f * y) / windowHeight;
 
     int triangleIndex = 0; // Index to keep track of the current position in the triangleBuffer
     // Convert each quad into two triangles and also apply size and offset to draw it to correct place
-    for (int i = 0; i < sizeof(floatBuffer) / sizeof(GLfloat); i += 8) {
+    for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); i += 8) {
         // Triangle 1
-        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 2] / size + +ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 3] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[i * sizeof(GLfloat)]) / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 1) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 2) * sizeof(GLfloat)]) / size + +ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 3) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 4) * sizeof(GLfloat)]) / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 5) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
 
         //// Triangle 2
-        triangleBuffer[triangleIndex++] = floatBuffer[i] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 1] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 4] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 5] / size * -1 + ndcMovementY;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 6] / size + ndcMovementX;
-        triangleBuffer[triangleIndex++] = floatBuffer[i + 7] / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[i * sizeof(GLfloat)]) / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 1) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 4) * sizeof(GLfloat)]) / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 5) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 6) * sizeof(GLfloat)]) / size + ndcMovementX;
+        triangleBuffer[triangleIndex++] = *reinterpret_cast<GLfloat*>(&inputBuffer[(i + 7) * sizeof(GLfloat)]) / size * -1 + ndcMovementY;
 
     }
 
