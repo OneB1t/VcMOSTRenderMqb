@@ -6,10 +6,17 @@
 #include <sys/keycodes.h>
 #include <time.h>
 #include "stb_easyfont.hh"
-
+#include <regex.h>
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
 #include <dlfcn.h>   // for dynamic loading functions such as dlopen, dlsym, and dlclose
+
+#include <iostream>
+#include <string>
+#include <dirent.h>
+#include <sys/stat.h>
+#include <limits.h>
+#include <time.h>
 
 // Vertex shader source
 const char* vertexShaderSource =
@@ -36,6 +43,135 @@ GLfloat dotX = 0.0f;
 GLfloat dotY = 0.0f;
 int windowWidth = 800;
 int windowHeight = 480;
+
+// AA variables
+std::string last_road = "UNKNOWN";
+std::string last_turn_side = "UNKNOWN";
+std::string last_event = "UNKNOWN";
+std::string last_turn_angle = "0";
+std::string last_turn_number = "0";
+std::string last_valid = "1";
+std::string last_distance_meters = "0";
+std::string last_distance_seconds = "0";
+std::string last_distance_valid = "1";
+
+// esotrace AA data parsing
+const char* log_directory_path = "/fs/sda0/esotrace_SD";
+regex_t next_turn_pattern, next_turn_distance_pattern;
+const char* next_turn_pattern_str = "onJob_updateNavigationNextTurnEvent : road='(.*?)', turnSide=(.*?), event=(.*?), turnAngle=(.*?), turnNumber=(.*?), valid=(.*?)";
+const char* next_turn_distance_pattern_str = "onJob_updateNavigationNextTurnDistance : distanceMeters=(.*?), timeSeconds=(.*?), valid=(.*?)";
+
+std::string icons_folder_path = "icons";
+
+// AA sensors data location
+std::string speedPos = "i:1304:216";
+
+
+const char * find_newest_file(const std::string& directory, const std::string& extension = ".esotrace") {
+    std::string newest_file;
+    DIR* dir = opendir(directory.c_str());
+    if (!dir) {
+        std::cerr << "Error opening directory" << std::endl;
+        return "";
+    }
+
+    time_t newest_mtime = 0;
+
+    struct dirent* entry;
+    while ((entry = readdir(dir)) != NULL) {
+        std::string filename = entry->d_name;
+        std::string filepath = directory + "/" + filename;
+
+        struct stat st;
+        if (stat(filepath.c_str(), &st) == 0 && S_ISREG(st.st_mode) && filename.find(extension) != std::string::npos) {
+            time_t modified_time = st.st_mtime;
+            if (modified_time > newest_mtime) {
+                newest_mtime = modified_time;
+                newest_file = filepath;
+            }
+        }
+    }
+
+    closedir(dir);
+    return newest_file.empty() ? NULL : newest_file.c_str();
+}
+
+void parse_log_line_next_turn(const char* match[]) {
+    if (match != NULL) {
+        last_road = std::string(match[1]);
+        last_turn_side = std::string(match[2]);
+        last_event = std::string(match[3]);
+        last_turn_angle = std::string(match[4]);
+        last_turn_number = std::string(match[5]);
+        last_valid = std::string(match[6]);
+    }
+    else {
+        // Set default values or handle the case where the pattern is not found
+        last_road = "";
+        last_turn_side = "";
+        last_event = "";
+        last_turn_angle = "0";
+        last_turn_number = "0";
+        last_valid = "0";
+    }
+}
+
+void parse_log_line_next_turn_distance(const char* match[]) {
+    if (match != NULL) {
+        last_distance_meters = std::string(match[1]);
+        last_distance_seconds = std::string(match[2]);
+        last_distance_valid = std::string(match[3]);
+    }
+    else {
+        // Set default values or handle the case where the pattern is not found
+        last_distance_meters = "0";
+        last_distance_seconds = "0";
+        last_distance_valid = "0";
+    }
+}
+
+void search_and_parse_last_occurrence(const char* file_path, regex_t regex_pattern, int parseoption) {
+    FILE* file = fopen(file_path, "rb");
+    if (!file) {
+        fprintf(stderr, "File '%s' does not exist.\n", file_path);
+        return;
+    }
+
+    const size_t chunk_size = 8192;
+    char chunk[chunk_size + 1];
+
+    // Get file size
+    fseek(file, 0, SEEK_END);
+    long long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+
+    while (ftell(file) > 0) {
+        long long current_position = ftell(file);
+        size_t offset = (current_position >= chunk_size) ? chunk_size : (size_t)current_position;
+        fseek(file, -offset, SEEK_CUR);
+
+        fread(chunk, 1, offset, file);
+        chunk[offset] = '\0'; // Null-terminate the chunk
+
+        regmatch_t match[10];
+        if (regexec(&regex_pattern, chunk, 10, match, 0) == 0) {
+            if (parseoption == 0) {
+                parse_log_line_next_turn((const char**)&chunk[match[0].rm_so]);
+            } else if (parseoption == 1) {
+                parse_log_line_next_turn_distance((const char**)&chunk[match[0].rm_so]);
+            }
+            fclose(file);
+            return;
+        }
+
+        regfree(&regex_pattern);
+
+        if (current_position == 0) {
+            break; // Reached the beginning of the file
+        }
+    }
+    fclose(file);
+}
 
 
 static EGLenum checkErrorEGL(const char* msg)
@@ -118,7 +254,7 @@ void drawRing() {
     glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
 }
 
-void print_string(float x, float y, char* text, float r, float g, float b, float size) {
+void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
     char inputBuffer[2000] = { 0 }; // ~500 chars
     GLfloat triangleBuffer[2000] = { 0 };
     int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
@@ -208,6 +344,13 @@ void Draw() {
 int main(int argc, char *argv[]) {
 
     std::cout << "QNX MOST render v2" << std::endl;
+
+    // Compile regular expressions
+    if (regcomp(&next_turn_pattern, next_turn_pattern_str, REG_EXTENDED) != 0 ||
+        regcomp(&next_turn_distance_pattern, next_turn_distance_pattern_str, REG_EXTENDED) != 0) {
+        std::cerr << "Failed to compile regular expression" << std::endl;
+        return 1;
+    }
 
     void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
      if (!func_handle) {
@@ -322,6 +465,18 @@ int main(int argc, char *argv[]) {
     while (true)
     {
         frameCount++;
+        if (frameCount % 20 == 0) // 3 times per second
+        {
+            const char * log_file_path = find_newest_file(log_directory_path);
+
+            // Call the parsing function
+            // Replace "file_path" and "regex_pattern" with appropriate values
+            search_and_parse_last_occurrence(log_file_path, next_turn_pattern, 0);
+            search_and_parse_last_occurrence(log_file_path, next_turn_distance_pattern, 1);
+
+           // search_last_occurrence(log_file_path, next_turn_distance_pattern);
+
+        }
         // Calculate elapsed time
         time_t currentTime = time(NULL);
         double elapsedTime = difftime(currentTime, startTime);
@@ -347,6 +502,13 @@ int main(int argc, char *argv[]) {
     	Draw();
     	//drawRing();
     	print_string(-150, 0, speed, 1, 1, 1,50);
+
+    	print_string(0, -50, last_road.c_str(), 1, 1, 1, 200);
+    	print_string(0, -100, last_turn_side.c_str(), 1, 1, 1, 200);
+    	print_string(0, -150, last_event.c_str(), 1, 1, 1, 200);
+    	print_string(0, -200, last_turn_angle.c_str(), 1, 1, 1, 200);
+    	print_string(0, -250, last_turn_number.c_str(), 1, 1, 1, 200);
+
         eglSwapBuffers(eglDisplay, eglSurface);
 
     }
