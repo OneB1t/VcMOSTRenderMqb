@@ -22,6 +22,14 @@ continental VDO
 > 
 > 3CG920791 - vw atlas
 
+opengl-render-qnx C++ -> much faster then first python implementation can render around 10fps
+also installation should be much less painfull as it does not require anything special just compiled binary and some way to run it on MIB2 device
+
+
+https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/0b193c30-7f72-46c4-8433-422bf9de17b9
+
+
+OLD WORK:
 
 To make this work you need to install Python3.3 to MIB2.5 first using following package repositories: https://pkgsrc.mibsolution.one then save current version of VCRenderData.py to sd card or upload it via winSCP
 To run the code then execute 
