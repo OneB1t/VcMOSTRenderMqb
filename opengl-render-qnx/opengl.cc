@@ -51,8 +51,8 @@ std::string last_event = "UNKNOWN";
 std::string last_turn_angle = "0";
 std::string last_turn_number = "0";
 std::string last_valid = "1";
-std::string last_distance_meters = "0";
-std::string last_distance_seconds = "0";
+std::string last_distance_meters = "---";
+std::string last_distance_seconds = "---";
 std::string last_distance_valid = "1";
 
 // esotrace AA data parsing
@@ -172,7 +172,6 @@ void search_and_parse_last_occurrence(const char* file_path, regex_t regex_patte
     }
     fclose(file);
 }
-
 
 static EGLenum checkErrorEGL(const char* msg)
 {
@@ -300,6 +299,10 @@ void print_string(float x, float y, const char* text, float r, float g, float b,
     glDrawArrays(GL_TRIANGLES, 0, triangleIndex);
 
     glDeleteBuffers(1, &vbo);
+}
+
+void print_string_center(float y, const char* text, float r, float g, float b, float size) {
+    print_string(-stb_easy_font_width(text) * (size / 200), y, text, r, g, b, size);
 }
 
 
@@ -503,12 +506,14 @@ int main(int argc, char *argv[]) {
     	//drawRing();
     	print_string(-150, 0, speed, 1, 1, 1,50);
 
-    	print_string(0, -50, last_road.c_str(), 1, 1, 1, 200);
-    	print_string(0, -100, last_turn_side.c_str(), 1, 1, 1, 200);
-    	print_string(0, -150, last_event.c_str(), 1, 1, 1, 200);
-    	print_string(0, -200, last_turn_angle.c_str(), 1, 1, 1, 200);
-    	print_string(0, -250, last_turn_number.c_str(), 1, 1, 1, 200);
+        print_string_center(100, last_road.c_str(), 1, 1, 1, 100);
+        print_string_center(50, last_turn_side.c_str(), 1, 1, 1, 100);
+        print_string_center(0, last_event.c_str(), 1, 1, 1, 100);
+        print_string_center(-50, last_turn_angle.c_str(), 1, 1, 1, 100);
+        print_string_center(-100, last_turn_number.c_str(), 1, 1, 1, 100);
 
+        print_string_center(150, last_distance_meters.c_str(), 1, 1, 1, 100);
+        print_string_center(200, last_distance_seconds.c_str(), 1, 1, 1, 100);
         eglSwapBuffers(eglDisplay, eglSurface);
 
     }

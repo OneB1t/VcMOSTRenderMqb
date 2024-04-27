@@ -228,7 +228,7 @@ static int stb_easy_font_print(float x, float y, const char* text, unsigned char
     return (unsigned)offset / 32;
 }
 
-static int stb_easy_font_width(char* text)
+static int stb_easy_font_width(const char* text)
 {
     float len = 0;
     float max_len = 0;

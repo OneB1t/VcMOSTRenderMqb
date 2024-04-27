@@ -33,8 +33,8 @@ std::string last_event = "UNKNOWN";
 std::string last_turn_angle = "0";
 std::string last_turn_number = "0";
 std::string last_valid = "1";
-std::string last_distance_meters = "0";
-std::string last_distance_seconds = "0";
+std::string last_distance_meters = "---";
+std::string last_distance_seconds = "---";
 std::string last_distance_valid = "1";
 
 // esotrace AA data parsing
@@ -45,7 +45,7 @@ std::regex next_turn_distance_pattern("onJob_updateNavigationNextTurnDistance : 
 std::string icons_folder_path = "icons";
 
 // AA sensors data location
-std::string speedPos = "i:1304:216";
+std::string     sd = "i:1304:216";
 
 
 
@@ -315,6 +315,11 @@ void print_string(float x, float y, const char* text, float r, float g, float b,
     glDeleteBuffers(1, &vbo);
 }
 
+void print_string_center(float y, const char* text, float r, float g, float b, float size) {
+    print_string(-stb_easy_font_width(text) * (size / 200), y, text, r, g, b, size);
+}
+
+
 // Initialize OpenGL ES
 void Init() {
     // Load and compile shaders
@@ -541,11 +546,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         //drawArrow();
         //drawRing();
 
-        print_string(0, -50, last_road.c_str(), 1, 1, 1, 200);
-        print_string(0, -100, last_turn_side.c_str(), 1, 1, 1, 200);
-        print_string(0, -150, last_event.c_str(), 1, 1, 1, 200);
-        print_string(0, -200, last_turn_angle.c_str(), 1, 1, 1, 200);
-        print_string(0, -250, last_turn_number.c_str(), 1, 1, 1, 200);
+        print_string_center(100, last_road.c_str(), 1, 1, 1, 100);
+        print_string_center(50, last_turn_side.c_str(), 1, 1, 1, 100);
+        print_string_center(0, last_event.c_str(), 1, 1, 1, 100);
+        print_string_center(-50, last_turn_angle.c_str(), 1, 1, 1, 100);
+        print_string_center(-100, last_turn_number.c_str(), 1, 1, 1, 100);
+
+        print_string_center(150, last_distance_meters.c_str(), 1, 1, 1, 100);
+        print_string_center(200, last_distance_seconds.c_str(), 1, 1, 1, 100);
 
         eglSwapBuffers(eglDisplay, eglSurface);
     }
