@@ -18,6 +18,10 @@
 #include <limits.h>
 #include <time.h>
 
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+
 // Vertex shader source
 const char* vertexShaderSource =
     "attribute vec2 position;    \n"
@@ -128,6 +132,75 @@ void parse_log_line_next_turn_distance(const char* match[]) {
         last_distance_seconds = "0";
         last_distance_valid = "0";
     }
+}
+
+#define PORT 5900  // Default VNC port
+#define BUFFER_SIZE 4096  // Adjust the buffer size as per your requirement
+
+int rfb() {
+    int sockfd, newsockfd;
+    struct sockaddr_in serv_addr, cli_addr;
+    socklen_t clilen;
+    unsigned char buffer[BUFFER_SIZE];  // Use unsigned char for binary data
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error opening socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize socket structure
+    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = INADDR_ANY;
+    serv_addr.sin_port = htons(PORT);
+
+    // Bind the host address
+    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Error on binding");
+        exit(EXIT_FAILURE);
+    }
+
+    // Listen for incoming connections
+    listen(sockfd, 5);
+    clilen = sizeof(cli_addr);
+
+    // Accept actual connection
+    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
+    if (newsockfd < 0) {
+        perror("Error on accept");
+        exit(EXIT_FAILURE);
+    }
+
+    // Receive VNC data into RAM
+    unsigned char *vnc_data = NULL;
+    int total_bytes_received = 0;
+    int bytes_received;
+    while ((bytes_received = recv(newsockfd, buffer, BUFFER_SIZE, 0)) > 0) {
+        // Reallocate memory for vnc_data
+    	vnc_data = (unsigned char *)realloc(vnc_data, total_bytes_received + bytes_received);
+        if (vnc_data == NULL) {
+            perror("Error allocating memory");
+            exit(EXIT_FAILURE);
+        }
+        // Copy received data into vnc_data buffer
+        memcpy(vnc_data + total_bytes_received, buffer, bytes_received);
+        total_bytes_received += bytes_received;
+    }
+    if (bytes_received < 0) {
+        perror("Error receiving data");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Received %d bytes of VNC data.\n", total_bytes_received);
+
+    // Process the received VNC data in memory here
+
+    // Free the allocated memory
+    free(vnc_data);
+
+    return 0;
 }
 
 void search_and_parse_last_occurrence(const char* file_path, regex_t regex_pattern, int parseoption) {

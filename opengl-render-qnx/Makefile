@@ -3,6 +3,7 @@ LIBS+=egl
 LIBS+=glesv2
 LIBS+=gf
 LIBS+=m
+LIBS+=socket
 ifndef QRECURSE
 QRECURSE=recurse.mk
 ifdef QCONFIG
