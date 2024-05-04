@@ -54,6 +54,21 @@ std::string icons_folder_path = "icons";
 // AA sensors data location
 std::string     sd = "i:1304:216";
 
+GLfloat vertices[] = {
+   -1.0f,  1.0f, 0.0f,  // Top Left
+    1.0f,  1.0f, 0.0f,  // Top Right
+    1.0f, -1.0f, 0.0f,  // Bottom Right
+   -1.0f, -1.0f, 0.0f   // Bottom Left
+};
+
+// Texture coordinates
+GLfloat texCoords[] = {
+    0.0f, 0.0f,  // Bottom Left
+    1.0f, 0.0f,  // Bottom Right
+    1.0f, 1.0f,  // Top Right
+    0.0f, 1.0f   // Top Left
+};
+
 // Constants for VNC protocol
 const char* PROTOCOL_VERSION = "RFB 003.003\n"; // Client initialization message
 const char FRAMEBUFFER_UPDATE_REQUEST[] = {
@@ -61,8 +76,8 @@ const char FRAMEBUFFER_UPDATE_REQUEST[] = {
     0,
     0,0,
     0,0,
-    15,0,
-    8,112
+    255,255,
+    255,255
 };
 const char CLIENT_INIT[] = {
     1,     // Message Type: FramebufferUpdateRequest
@@ -511,7 +526,7 @@ SOCKET MySocketOpen(int const Type, WORD const Port)
     return Socket;
 }
 
-int parseFramebufferUpdate(SOCKET socket_fd) {
+int parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frameBufferHeight) {
     // Read message-type (1 byte) - not used, assuming it's always 0
     char messageType[1];
     if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
@@ -553,7 +568,8 @@ int parseFramebufferUpdate(SOCKET socket_fd) {
             fprintf(stderr, "Error reading rectangle header\n");
             return -1;
         }
-
+        *frameBufferWidth = byteArrayToInt16(width);
+        *frameBufferHeight = byteArrayToInt16(height);
         // Calculate size of pixel data based on encoding type (assuming 4 bytes per pixel)
         int pixelDataSize = byteArrayToInt16(width) * byteArrayToInt16(height) * 4;
 
@@ -722,7 +738,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         fprintf(stderr, "Error reading framebuffer width\n");
         return 1;
     }
-    int16_t framebufferWidthInt = ((framebufferWidth[0] & 0xFF) << 8) | (framebufferWidth[1] & 0xFF);
+    int framebufferWidthInt = ((framebufferWidth[0] & 0xFF) << 8) | (framebufferWidth[1] & 0xFF);
 
 
     // Read framebuffer width (2 bytes) ServerInit
@@ -731,7 +747,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         fprintf(stderr, "Error reading framebuffer height\n");
         return 1;
     }
-    int16_t framebufferHeightInt = ((framebufferHeight[0] & 0xFF) << 8) | (framebufferHeight[1] & 0xFF);
+    int framebufferHeightInt = ((framebufferHeight[0] & 0xFF) << 8) | (framebufferHeight[1] & 0xFF);
 
 
     // Read pixel format (16 bytes) ServerInit
@@ -781,7 +797,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Main loop
     while (true)
     {
-        int leftSizeForRead = parseFramebufferUpdate(MySocket);
+        int leftSizeForRead = parseFramebufferUpdate(MySocket, &framebufferWidthInt, &framebufferHeightInt);
         std::vector<char> framebufferUpdate(leftSizeForRead); // Allocate memory for receiving framebuffer update
         bytesReceived = recv(MySocket, framebufferUpdate.data(), leftSizeForRead, MSG_WAITALL);
         if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
@@ -805,28 +821,28 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             return 1;
         }
 
-        if (frameCount % 20 == 0) // 3 times per second
-        {
-            std::string log_file_path = find_newest_file(log_directory_path);
+        //if (frameCount % 20 == 0) // 3 times per second
+        //{
+        //    std::string log_file_path = find_newest_file(log_directory_path);
 
-            // Start timing
-            auto start = std::chrono::steady_clock::now();
+        //    // Start timing
+        //    auto start = std::chrono::steady_clock::now();
 
-            // Call the parsing function
-            // Replace "file_path" and "regex_pattern" with appropriate values
-            search_and_parse_last_occurrence(log_file_path, next_turn_pattern, 0);
-            search_and_parse_last_occurrence(log_file_path, next_turn_distance_pattern, 1);
-            
-            // End timing
-            auto end = std::chrono::steady_clock::now();
+        //    // Call the parsing function
+        //    // Replace "file_path" and "regex_pattern" with appropriate values
+        //    search_and_parse_last_occurrence(log_file_path, next_turn_pattern, 0);
+        //    search_and_parse_last_occurrence(log_file_path, next_turn_distance_pattern, 1);
+        //    
+        //    // End timing
+        //    auto end = std::chrono::steady_clock::now();
 
-            // Calculate the duration
-            auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
-            std::cout << "Execution time: " << duration.count() << " milliseconds" << std::endl;
+        //    // Calculate the duration
+        //    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end - start);
+        //    std::cout << "Execution time: " << duration.count() << " milliseconds" << std::endl;
 
-           // search_last_occurrence(log_file_path, next_turn_distance_pattern);
+        //   // search_last_occurrence(log_file_path, next_turn_distance_pattern);
 
-        }
+        //}
         // Calculate elapsed time
         time_t currentTime = time(NULL);
         double elapsedTime = difftime(currentTime, startTime);
@@ -872,20 +888,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         glBindTexture(GL_TEXTURE_2D, textureID);
 
-        GLfloat vertices[] = {
-           -1.0f,  1.0f, 0.0f,  // Top Left
-            1.0f,  1.0f, 0.0f,  // Top Right
-            1.0f, -1.0f, 0.0f,  // Bottom Right
-           -1.0f, -1.0f, 0.0f   // Bottom Left
-        };
 
-        // Texture coordinates
-        GLfloat texCoords[] = {
-            0.0f, 0.0f,  // Bottom Left
-            1.0f, 0.0f,  // Bottom Right
-            1.0f, 1.0f,  // Top Right
-            0.0f, 1.0f   // Top Left
-        };
 
         // Set up shader program and attributes
         // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
