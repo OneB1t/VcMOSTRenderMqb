@@ -56,10 +56,10 @@ std::string icons_folder_path = "icons";
 std::string     sd = "i:1304:216";
 
 GLfloat vertices[] = {
-   -1.1f,  1.15f, 0.0f,  // Top Left
-    1.5f,  1.15f, 0.0f,  // Top Right
-    1.5f, -1.0f, 0.0f,  // Bottom Right
-   -1.1f, -1.0f, 0.0f   // Bottom Left
+   -0.5f,  0.8, 0.0f,  // Top Left
+    0.5f,  0.8f, 0.0f,  // Top Right
+    0.5f, -1.80f, 0.0f,  // Bottom Right
+   -0.5f, -1.80f, 0.0f   // Bottom Left
 };
 
 // Texture coordinates
@@ -132,22 +132,6 @@ std::string read_data(const std::string& position) {
 
     std::cout << result;
     return result;
-}
-
-std::string convert_to_km(int meters) {
-    if (meters >= 1000) {
-        // Convert meters to kilometers
-        double km = static_cast<double>(meters) / 1000.0;
-        int km_int = static_cast<int>(km); // Integer part of kilometers
-        int decimal_part = static_cast<int>((km - km_int) * 10); // Extract one decimal place
-        std::stringstream ss;
-        ss << km_int << '.' << decimal_part << " Km";
-        return ss.str();
-    }
-    else {
-        // Return meters if less than 1000 meters
-        return std::to_string(meters) + " m";
-    }
 }
 
 // Vertex shader source
@@ -529,20 +513,21 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     {
         frameCount++;
         int leftSizeForRead = parseFramebufferUpdate(MySocket, &framebufferWidthInt, &framebufferHeightInt);
-        std::vector<char> framebufferUpdate(leftSizeForRead); // Allocate memory for receiving framebuffer update
-        bytesReceived = recv(MySocket, framebufferUpdate.data(), leftSizeForRead, MSG_WAITALL);
-        if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
-            std::cerr << "error receiving framebuffer update" << std::endl;
-            closesocket(MySocket);
-            WSACleanup();
+        char* framebufferUpdate = (char*)malloc(leftSizeForRead * sizeof(char));
+        if (framebufferUpdate == NULL) {
+            perror("malloc failed");
+            return 1;
+        }
+        bytesReceived = recv(MySocket, framebufferUpdate, leftSizeForRead, MSG_WAITALL);
+        if (bytesReceived < 0) {
+            perror("error receiving framebuffer update");
+            free(framebufferUpdate);
             return 1;
         }
 
         // Send encoding update request
-        if (send(MySocket, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) == SOCKET_ERROR) {
+        if (send(MySocket, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
             std::cerr << "error sending framebuffer update request" << std::endl;
-            closesocket(MySocket);
-            WSACleanup();
             return 1;
         }
 
@@ -565,14 +550,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         //snprintf(test, sizeof(test), "%.2f FPS\n", fps);
         //print_string(-300, 200, test, 1, 1, 1, 200); // print FPS
 
-
-
         // Load image data into texture
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate.data());
-
-
-
-
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
 
         // Set up shader program and attributes
         // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
@@ -590,6 +569,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         // Draw quad
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         eglSwapBuffers(eglDisplay, eglSurface);
+        free(framebufferUpdate); // Free the dynamically allocated memory
     }
 
     // Cleanup

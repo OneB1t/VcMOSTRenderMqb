@@ -21,22 +21,61 @@
 #include <sys/types.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 // Vertex shader source
 const char* vertexShaderSource =
-    "attribute vec2 position;    \n"
-    "void main()                  \n"
-    "{                            \n"
-    "   gl_Position = vec4(position, 0.0, 1.0); \n"
-	"   gl_PointSize = 4.0;      \n" // Point size
-    "}                            \n";
+"attribute vec2 position;    \n"
+"attribute vec2 texCoord;     \n" // Add texture coordinate attribute
+"varying vec2 v_texCoord;     \n" // Declare varying variable for texture coordinate
+"void main()                  \n"
+"{                            \n"
+"   gl_Position = vec4(position, 0.0, 1.0); \n"
+"   v_texCoord = texCoord;   \n"
+"   gl_PointSize = 4.0;      \n" // Point size
+"}                            \n";
 
-// Fragment shader source
 const char* fragmentShaderSource =
-    "void main()               \n"
-    "{                         \n"
-    "  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
-    "}                         \n";
+"precision mediump float;\n"
+"varying vec2 v_texCoord;\n"
+"uniform sampler2D texture;\n"
+"void main()\n"
+"{\n"
+"    gl_FragColor = texture2D(texture, v_texCoord);\n"
+"}\n";
+
+GLfloat vertices[] = {
+   -0.5f,  0.8, 0.0f,  // Top Left
+    0.5f,  0.8f, 0.0f,  // Top Right
+    0.5f, -1.80f, 0.0f,  // Bottom Right
+   -0.5f, -1.80f, 0.0f   // Bottom Left
+};
+
+// Texture coordinates
+GLfloat texCoords[] = {
+    0.0f, 0.0f,  // Bottom Left
+    1.0f, 0.0f,  // Bottom Right
+    1.0f, 1.0f,  // Top Right
+    0.0f, 1.0f   // Top Left
+};
+
+// Constants for VNC protocol
+const char* PROTOCOL_VERSION = "RFB 003.003\n"; // Client initialization message
+const char FRAMEBUFFER_UPDATE_REQUEST[] = {
+    3,     // Message Type: FramebufferUpdateRequest
+    0,
+    0,0,
+    0,0,
+    255,255,
+    255,255
+};
+const char CLIENT_INIT[] = {
+    1,     // Message Type: FramebufferUpdateRequest
+};
+
+const char ENCODING[] = {
+    2,0,0,1,0,0,0,0
+};
 
 GLuint programObject;
 EGLDisplay eglDisplay;
@@ -47,207 +86,6 @@ GLfloat dotX = 0.0f;
 GLfloat dotY = 0.0f;
 int windowWidth = 800;
 int windowHeight = 480;
-
-// AA variables
-std::string last_road = "UNKNOWN";
-std::string last_turn_side = "UNKNOWN";
-std::string last_event = "UNKNOWN";
-std::string last_turn_angle = "0";
-std::string last_turn_number = "0";
-std::string last_valid = "1";
-std::string last_distance_meters = "---";
-std::string last_distance_seconds = "---";
-std::string last_distance_valid = "1";
-
-// esotrace AA data parsing
-const char* log_directory_path = "/fs/sda0/esotrace_SD";
-regex_t next_turn_pattern, next_turn_distance_pattern;
-const char* next_turn_pattern_str = "onJob_updateNavigationNextTurnEvent : road='(.*?)', turnSide=(.*?), event=(.*?), turnAngle=(.*?), turnNumber=(.*?), valid=(.*?)";
-const char* next_turn_distance_pattern_str = "onJob_updateNavigationNextTurnDistance : distanceMeters=(.*?), timeSeconds=(.*?), valid=(.*?)";
-
-std::string icons_folder_path = "icons";
-
-// AA sensors data location
-std::string speedPos = "i:1304:216";
-
-
-#define RFB_PORT 5900  // Default VNC port
-#define BUFFER_SIZE 4096  // Adjust the buffer size as per your requirement
-
-// RFB protocol message types
-#define RFB_PROTOCOL_VERSION  0x0
-#define RFB_AUTHENTICATION  0x1
-#define RFB_INIT  0x2
-#define RFB_FRAME_BUFFER_UPDATE_REQUEST  0x3
-// Add more message types as needed
-
-// RFB protocol version
-#define RFB_VERSION_MAJOR  0x3
-#define RFB_VERSION_MINOR  0x8
-#define RFB_VERSION_STRING  "RFB 003.008\n"
-
-// RFB protocol security types
-#define RFB_SECURITY_TYPE_INVALID  0x0
-#define RFB_SECURITY_TYPE_NONE  0x1
-
-
-const char * find_newest_file(const std::string& directory, const std::string& extension = ".esotrace") {
-    std::string newest_file;
-    DIR* dir = opendir(directory.c_str());
-    if (!dir) {
-        std::cerr << "Error opening directory" << std::endl;
-        return "";
-    }
-
-    time_t newest_mtime = 0;
-
-    struct dirent* entry;
-    while ((entry = readdir(dir)) != NULL) {
-        std::string filename = entry->d_name;
-        std::string filepath = directory + "/" + filename;
-
-        struct stat st;
-        if (stat(filepath.c_str(), &st) == 0 && S_ISREG(st.st_mode) && filename.find(extension) != std::string::npos) {
-            time_t modified_time = st.st_mtime;
-            if (modified_time > newest_mtime) {
-                newest_mtime = modified_time;
-                newest_file = filepath;
-            }
-        }
-    }
-
-    closedir(dir);
-    return newest_file.empty() ? NULL : newest_file.c_str();
-}
-
-void parse_log_line_next_turn(const char* match[]) {
-    if (match != NULL) {
-        last_road = std::string(match[1]);
-        last_turn_side = std::string(match[2]);
-        last_event = std::string(match[3]);
-        last_turn_angle = std::string(match[4]);
-        last_turn_number = std::string(match[5]);
-        last_valid = std::string(match[6]);
-    }
-    else {
-        // Set default values or handle the case where the pattern is not found
-        last_road = "";
-        last_turn_side = "";
-        last_event = "";
-        last_turn_angle = "0";
-        last_turn_number = "0";
-        last_valid = "0";
-    }
-}
-
-void parse_log_line_next_turn_distance(const char* match[]) {
-    if (match != NULL) {
-        last_distance_meters = std::string(match[1]);
-        last_distance_seconds = std::string(match[2]);
-        last_distance_valid = std::string(match[3]);
-    }
-    else {
-        // Set default values or handle the case where the pattern is not found
-        last_distance_meters = "0";
-        last_distance_seconds = "0";
-        last_distance_valid = "0";
-    }
-}
-
-// Function to receive RFB messages
-void receive_rfb_messages(int sockfd) {
-    unsigned char buffer[BUFFER_SIZE];
-    int bytes_received;
-
-    // Receive messages continuously
-    while ((bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0)) > 0) {
-        // Process the received message
-        // For now, just print the received data
-        printf("Received %d bytes: ", bytes_received);
-        for (int i = 0; i < bytes_received; ++i) {
-            printf("%02X ", buffer[i]);
-        }
-        printf("\n");
-    }
-
-    if (bytes_received < 0) {
-        perror("Error receiving data");
-        exit(EXIT_FAILURE);
-    }
-}
-
-
-int rfb() {
-    int sockfd;
-    struct sockaddr_in serv_addr;
-
-    // Create socket
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        perror("Error opening socket");
-        exit(EXIT_FAILURE);
-    }
-
-    // Initialize socket structure
-    memset((char *)&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(RFB_PORT);
-
-    // Connect to the VNC server
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Error connecting to server");
-        exit(EXIT_FAILURE);
-    }
-
-    // Receive RFB messages
-    receive_rfb_messages(sockfd);
-
-    return 0;
-}
-
-void search_and_parse_last_occurrence(const char* file_path, regex_t regex_pattern, int parseoption) {
-    FILE* file = fopen(file_path, "rb");
-    if (!file) {
-        fprintf(stderr, "File '%s' does not exist.\n", file_path);
-        return;
-    }
-
-    const size_t chunk_size = 8192;
-    char chunk[chunk_size + 1];
-
-    // Get file size
-    fseek(file, 0, SEEK_END);
-    long long file_size = ftell(file);
-    fseek(file, 0, SEEK_SET);
-
-    while (ftell(file) > 0) {
-        long long current_position = ftell(file);
-        size_t offset = (current_position >= chunk_size) ? chunk_size : (size_t)current_position;
-        fseek(file, -offset, SEEK_CUR);
-
-        fread(chunk, 1, offset, file);
-        chunk[offset] = '\0'; // Null-terminate the chunk
-
-        regmatch_t match[10];
-        if (regexec(&regex_pattern, chunk, 10, match, 0) == 0) {
-            if (parseoption == 0) {
-                parse_log_line_next_turn((const char**)&chunk[match[0].rm_so]);
-            } else if (parseoption == 1) {
-                parse_log_line_next_turn_distance((const char**)&chunk[match[0].rm_so]);
-            }
-            fclose(file);
-            return;
-        }
-
-        regfree(&regex_pattern);
-
-        if (current_position == 0) {
-            break; // Reached the beginning of the file
-        }
-    }
-    fclose(file);
-}
 
 static EGLenum checkErrorEGL(const char* msg)
 {
@@ -274,59 +112,64 @@ static EGLenum checkErrorEGL(const char* msg)
     return error;
 }
 
-const int NUM_SEGMENTS = 30;
-// Function to render the ring
-void drawRing() {
-    // Clear the color buffer
-    glClear(GL_COLOR_BUFFER_BIT);
+int16_t byteArrayToInt16(const char* byteArray) {
+    return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
+}
 
-    // Set up radius and center of the ring
-    float outerRadius = 0.5f;
-    float innerRadius = 0.4f;
-    float centerX = 0.0f;
-    float centerY = 0.0f;
 
-    // Define vertices array for the outer circle
-    GLfloat outerCircleVertices[(NUM_SEGMENTS + 1) * 2];
-    for (int i = 0; i < NUM_SEGMENTS; ++i) {
-        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * 3.1421;
-        outerCircleVertices[i * 2] = centerX + outerRadius * cos(angle);
-        outerCircleVertices[i * 2 + 1] = centerY + outerRadius * sin(angle);
+int parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight) {
+    // Read message-type (1 byte) - not used, assuming it's always 0
+    char messageType[1];
+    if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading message type\n");
+        return -1;
     }
-    outerCircleVertices[NUM_SEGMENTS * 2] = outerCircleVertices[0];
-    outerCircleVertices[NUM_SEGMENTS * 2 + 1] = outerCircleVertices[1];
 
-    // Define vertices array for the inner circle
-    GLfloat innerCircleVertices[(NUM_SEGMENTS + 1) * 2];
-    for (int i = 0; i < NUM_SEGMENTS; ++i) {
-        float angle = ((float)i / NUM_SEGMENTS) * 2.0f * 3.1421;
-        innerCircleVertices[i * 2] = centerX + innerRadius * cos(angle);
-        innerCircleVertices[i * 2 + 1] = centerY + innerRadius * sin(angle);
+    // Read padding (1 byte) - unused
+    char padding[1];
+    if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading padding\n");
+        return -1;
     }
-    innerCircleVertices[NUM_SEGMENTS * 2] = innerCircleVertices[0];
-    innerCircleVertices[NUM_SEGMENTS * 2 + 1] = innerCircleVertices[1];
 
-    float aspectRatio = (float)windowHeight / windowWidth;
-
-    // Adjust vertices for aspect ratio
-    for (int i = 0; i <= NUM_SEGMENTS; ++i) {
-        outerCircleVertices[i * 2] *= aspectRatio;
-        innerCircleVertices[i * 2] *= aspectRatio;
+    // Read number-of-rectangles (2 bytes)
+    char numberOfRectangles[2];
+    if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading number of rectangles\n");
+        return -1;
     }
-    GLint positionAttribute = glGetAttribLocation(programObject, "position");
-    // Set up vertex attribute pointer for the outer circle
-    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, outerCircleVertices);
-    glEnableVertexAttribArray(positionAttribute);
 
-    // Draw the outer circle
-    glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
+    // Calculate the total size of the message
+    int pixelSizeToRead = 0; // message-type + padding + number-of-rectangles
 
-    // Set up vertex attribute pointer for the inner circle
-    glVertexAttribPointer(positionAttribute, 2, GL_FLOAT, GL_FALSE, 0, innerCircleVertices);
-    glEnableVertexAttribArray(positionAttribute);
+    // Now parse each rectangle
+    for (int i = 0; i < byteArrayToInt16(numberOfRectangles); i++) {
+        // Read rectangle header
+        char xPosition[2];
+        char yPosition[2];
+        char width[2];
+        char height[2];
+        char encodingType[4]; // S32
 
-    // Draw the inner circle
-    glDrawArrays(GL_LINE_STRIP, 0, NUM_SEGMENTS + 1);
+        if (!recv(socket_fd, xPosition, 2, MSG_WAITALL) ||
+            !recv(socket_fd, yPosition, 2, MSG_WAITALL) ||
+            !recv(socket_fd, width, 2, MSG_WAITALL) ||
+            !recv(socket_fd, height, 2, MSG_WAITALL) ||
+            !recv(socket_fd, encodingType, 4, MSG_WAITALL)) {
+            fprintf(stderr, "Error reading rectangle header\n");
+            return -1;
+        }
+        *frameBufferWidth = byteArrayToInt16(width);
+        *frameBufferHeight = byteArrayToInt16(height);
+        // Calculate size of pixel data based on encoding type (assuming 4 bytes per pixel)
+        int pixelDataSize = byteArrayToInt16(width) * byteArrayToInt16(height) * 4;
+
+        // Add the size of each rectangle header and pixel data to the total message size
+        pixelSizeToRead += pixelDataSize;
+    }
+
+    printf("FramebufferUpdate message size: %d bytes\n", pixelSizeToRead);
+    return pixelSizeToRead;
 }
 
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
@@ -381,7 +224,6 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
     print_string(-stb_easy_font_width(text) * (size / 200), y, text, r, g, b, size);
 }
 
-
 // Initialize OpenGL ES
 void Init() {
     // Load and compile shaders
@@ -408,13 +250,6 @@ void Init() {
 int main(int argc, char *argv[]) {
 
     std::cout << "QNX MOST render v2" << std::endl;
-
-    // Compile regular expressions
-    if (regcomp(&next_turn_pattern, next_turn_pattern_str, REG_EXTENDED) != 0 ||
-        regcomp(&next_turn_distance_pattern, next_turn_distance_pattern_str, REG_EXTENDED) != 0) {
-        std::cerr << "Failed to compile regular expression" << std::endl;
-        return 1;
-    }
 
     void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
      if (!func_handle) {
@@ -522,25 +357,124 @@ int main(int argc, char *argv[]) {
     // Initialize OpenGL ES
     Init();
 
+    int sockfd;
+    struct sockaddr_in serv_addr;
+
+    // Create socket
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        perror("Error opening socket");
+        exit(EXIT_FAILURE);
+    }
+
+    // Initialize socket structure
+    memset((char *)&serv_addr, 0, sizeof(serv_addr));
+    serv_addr.sin_family = AF_INET;
+    serv_addr.sin_addr.s_addr = inet_addr("192.168.1.189");
+    serv_addr.sin_port = htons(5900);
+
+    // Connect to the VNC server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Error connecting to server");
+        exit(EXIT_FAILURE);
+    }
+
+    // Receive server initialization message
+    char serverInitMsg[12];
+    int bytesReceived = recv(sockfd, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
+
+    if (bytesReceived < 0) {
+        std::cerr << "Error receiving server initialization message" << std::endl;
+        return 1;
+    }
+
+    // Send client protocol version message
+    if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
+        std::cerr << "Error sending client initialization message" << std::endl;
+        return 1;
+    }
+
+    // Security handshake
+    char securityHandshake[4];
+    recv(sockfd, securityHandshake, sizeof(securityHandshake), 0);
+    printf("%s\n", securityHandshake);
+    send(sockfd, "\x01", 1, 0); // ClientInit
+
+    // Read framebuffer width and height
+    char framebufferWidth[2];
+    char framebufferHeight[2];
+
+    if (!recv(sockfd, framebufferWidth, 2, 0) || !recv(sockfd, framebufferHeight, 2, 0)) {
+        fprintf(stderr, "Error reading framebuffer dimensions\n");
+        return 1;
+    }
+
+
+
+    // Read pixel format and name length
+    char pixelFormat[16];
+    char nameLength[4];
+
+    if (!recv(sockfd, pixelFormat, sizeof(pixelFormat), MSG_WAITALL) ||
+        !recv(sockfd, nameLength, sizeof(nameLength), MSG_WAITALL)) {
+        fprintf(stderr, "Error reading pixel format or name length\n");
+        return 1;
+    }
+
+    uint32_t nameLengthInt = (nameLength[0] << 24) | (nameLength[1] << 16) | (nameLength[2] << 8) | nameLength[3];
+
+    // Read server name
+    char name[32];
+    if (!recv(sockfd, name, nameLengthInt, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading server name\n");
+        return 1;
+    }
+
+    // Send encoding update requests
+    if (send(sockfd, ENCODING, sizeof(ENCODING), 0) < 0 ||
+        send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+        std::cerr << "Error sending framebuffer update request" << std::endl;
+        return 1;
+    }
+    int framebufferWidthInt = 0;
+    int framebufferHeightInt = 0;
+
+
     int frameCount = 0;
     double fps = 0.0;
     time_t startTime = time(NULL);
+
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+
+    // Set texture parameters
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
     // Main loop
     while (true)
     {
-        frameCount++;
-        if (frameCount % 20 == 0) // 3 times per second
-        {
-            const char * log_file_path = find_newest_file(log_directory_path);
+    	 frameCount++;
+    	    int leftSizeForRead = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt);
+    	    char *framebufferUpdate = (char *)malloc(leftSizeForRead * sizeof(char));
+    	    if (framebufferUpdate == NULL) {
+    	        perror("malloc failed");
+    	        return 1;
+    	    }
+    	    bytesReceived = recv(sockfd, framebufferUpdate, leftSizeForRead, MSG_WAITALL);
+    	    if (bytesReceived < 0) {
+    	        perror("error receiving framebuffer update");
+    	        free(framebufferUpdate);
+    	        return 1;
+    	    }
 
-            // Call the parsing function
-            // Replace "file_path" and "regex_pattern" with appropriate values
-            search_and_parse_last_occurrence(log_file_path, next_turn_pattern, 0);
-            search_and_parse_last_occurrence(log_file_path, next_turn_distance_pattern, 1);
-
-           // search_last_occurrence(log_file_path, next_turn_distance_pattern);
-
+        // Send encoding update request
+        if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+            std::cerr << "error sending framebuffer update request" << std::endl;
+            return 1;
         }
+
         // Calculate elapsed time
         time_t currentTime = time(NULL);
         double elapsedTime = difftime(currentTime, startTime);
@@ -555,30 +489,36 @@ int main(int argc, char *argv[]) {
             startTime = currentTime;
         }
         glClear(GL_COLOR_BUFFER_BIT); // clear all
-        char test[10]; // Adjust size accordingly
-        snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-        print_string(-330, 200, test, 1, 1, 1,50);
-        //drawArrow();
-        drawRing();
-        char speed[12]; // Adjust size accordingly
-         snprintf(speed, sizeof(speed), "%i Frame", frameCount);
+        glUseProgram(programObject);
+        //char test[10]; // Adjust size accordingly
+        //snprintf(test, sizeof(test), "%.2f FPS\n", fps);
+        //print_string(-300, 200, test, 1, 1, 1, 200); // print FPS
 
-    	//drawRing();
-    	print_string(-150, 0, speed, 1, 1, 1,50);
+        // Load image data into texture
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
 
-        print_string_center(100, last_road.c_str(), 1, 1, 1, 100);
-        print_string_center(50, last_turn_side.c_str(), 1, 1, 1, 100);
-        print_string_center(0, last_event.c_str(), 1, 1, 1, 100);
-        print_string_center(-50, last_turn_angle.c_str(), 1, 1, 1, 100);
-        print_string_center(-100, last_turn_number.c_str(), 1, 1, 1, 100);
+        // Set up shader program and attributes
+        // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
 
-        print_string_center(150, last_distance_meters.c_str(), 1, 1, 1, 100);
-        print_string_center(200, last_distance_seconds.c_str(), 1, 1, 1, 100);
+        // Set vertex positions
+        GLint positionAttribute = glGetAttribLocation(programObject, "position");
+        glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+        glEnableVertexAttribArray(positionAttribute);
+
+        // Set texture coordinates
+        GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
+        glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+        glEnableVertexAttribArray(texCoordAttrib);
+
+        // Draw quad
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         eglSwapBuffers(eglDisplay, eglSurface);
+        free(framebufferUpdate); // Free the dynamically allocated memory
 
     }
 
-    // Swap buffers
+    // Cleanup
+    glDeleteTextures(1, &textureID);
     eglSwapBuffers(eglDisplay, eglSurface);
     eglDestroySurface(eglDisplay, eglSurface);
     eglDestroyContext(eglDisplay, eglContext);
