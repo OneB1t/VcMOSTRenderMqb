@@ -259,18 +259,30 @@ std::string convert_to_km(int meters) {
 // Vertex shader source
 const char* vertexShaderSource =
 "attribute vec2 position;    \n"
+"attribute vec2 texCoord;     \n" // Add texture coordinate attribute
+"varying vec2 v_texCoord;     \n" // Declare varying variable for texture coordinate
 "void main()                  \n"
 "{                            \n"
 "   gl_Position = vec4(position, 0.0, 1.0); \n"
+"   v_texCoord = texCoord;   \n"
 "   gl_PointSize = 4.0;      \n" // Point size
 "}                            \n";
 
 // Fragment shader source
+//const char* fragmentShaderSource =
+//"void main()               \n"
+//"{                         \n"
+//"  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
+//"}                         \n";
+
 const char* fragmentShaderSource =
-"void main()               \n"
-"{                         \n"
-"  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
-"}                         \n";
+"precision mediump float;\n"
+"varying vec2 v_texCoord;\n"
+"uniform sampler2D texture;\n"
+"void main()\n"
+"{\n"
+"    gl_FragColor = texture2D(texture, v_texCoord);\n"
+"}\n";
 
 // Compile shader function
 GLuint compileShader(GLenum type, const char* source) {
@@ -779,9 +791,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
 
         // Write received data to a file
-        char filename[256];
-        sprintf_s(filename, sizeof(filename), "framebuffer_update%d.bin", frameCount);
-        writeBMP(framebufferUpdate.data(), framebufferWidthInt, framebufferHeightInt, filename);
+       // char filename[256];
+       // sprintf_s(filename, sizeof(filename), "framebuffer_update%d.bin", frameCount);
+       // writeBMP(framebufferUpdate.data(), framebufferWidthInt, framebufferHeightInt, filename);
 
         frameCount++;
 
@@ -832,19 +844,67 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         glUseProgram(programObject);
         char test[10]; // Adjust size accordingly
         snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-        print_string(-300, 200, test, 1, 1, 1, 200);
+        //print_string(-300, 200, test, 1, 1, 1, 200);
 
         //drawArrow();
         //drawRing();
 
-        print_string_center(100, last_road.c_str(), 1, 1, 1, 100);
-        print_string_center(50, last_turn_side.c_str(), 1, 1, 1, 100);
-        print_string_center(0, last_event.c_str(), 1, 1, 1, 100);
-        print_string_center(-50, last_turn_angle.c_str(), 1, 1, 1, 100);
-        print_string_center(-100, last_turn_number.c_str(), 1, 1, 1, 100);
+         //print_string_center(100, last_road.c_str(), 1, 1, 1, 100);
+         //print_string_center(50, last_turn_side.c_str(), 1, 1, 1, 100);
+         //print_string_center(0, last_event.c_str(), 1, 1, 1, 100);
+         //print_string_center(-50, last_turn_angle.c_str(), 1, 1, 1, 100);
+         //print_string_center(-100, last_turn_number.c_str(), 1, 1, 1, 100);
 
-        print_string_center(150, last_distance_meters.c_str(), 1, 1, 1, 100);
-        print_string_center(200, last_distance_seconds.c_str(), 1, 1, 1, 100);
+         // print_string_center(150, last_distance_meters.c_str(), 1, 1, 1, 100);
+         //print_string_center(200, last_distance_seconds.c_str(), 1, 1, 1, 100);
+
+
+        GLuint textureID;
+        glGenTextures(1, &textureID);
+        glBindTexture(GL_TEXTURE_2D, textureID);
+
+        // Set texture parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        // Load image data into texture
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate.data());
+
+        glBindTexture(GL_TEXTURE_2D, textureID);
+
+        GLfloat vertices[] = {
+           -1.0f,  1.0f, 0.0f,  // Top Left
+            1.0f,  1.0f, 0.0f,  // Top Right
+            1.0f, -1.0f, 0.0f,  // Bottom Right
+           -1.0f, -1.0f, 0.0f   // Bottom Left
+        };
+
+        // Texture coordinates
+        GLfloat texCoords[] = {
+            0.0f, 0.0f,  // Bottom Left
+            1.0f, 0.0f,  // Bottom Right
+            1.0f, 1.0f,  // Top Right
+            0.0f, 1.0f   // Top Left
+        };
+
+        // Set up shader program and attributes
+        // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
+
+        // Set vertex positions
+        GLint positionAttribute = glGetAttribLocation(programObject, "position");
+        glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+        glEnableVertexAttribArray(positionAttribute);
+
+        // Set texture coordinates
+        GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
+        glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+        glEnableVertexAttribArray(texCoordAttrib);
+
+        // Draw quad
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+        // Cleanup
+        glDeleteTextures(1, &textureID);
 
         eglSwapBuffers(eglDisplay, eglSurface);
     }
