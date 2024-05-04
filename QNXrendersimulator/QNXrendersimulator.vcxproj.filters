@@ -38,13 +38,9 @@
     </Image>
   </ItemGroup>
   <ItemGroup>
-    <_EmbedManagedResourceFile Include="bin\libGLESv1_CM.dll" />
-    <_EmbedManagedResourceFile Include="bin\libGLESv2.dll" />
-  </ItemGroup>
-  <ItemGroup>
-    <Text Include="bin\libEGL.dll" />
-  </ItemGroup>
-  <ItemGroup>
     <CopyFileToFolders Include="bin\d3dcompiler_47.dll" />
+    <CopyFileToFolders Include="bin\libEGL.dll" />
+    <CopyFileToFolders Include="bin\libGLESv1_CM.dll" />
+    <CopyFileToFolders Include="bin\libGLESv2.dll" />
   </ItemGroup>
 </Project>

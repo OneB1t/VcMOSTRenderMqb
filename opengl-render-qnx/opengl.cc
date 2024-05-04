@@ -71,6 +71,26 @@ std::string icons_folder_path = "icons";
 std::string speedPos = "i:1304:216";
 
 
+#define RFB_PORT 5900  // Default VNC port
+#define BUFFER_SIZE 4096  // Adjust the buffer size as per your requirement
+
+// RFB protocol message types
+#define RFB_PROTOCOL_VERSION  0x0
+#define RFB_AUTHENTICATION  0x1
+#define RFB_INIT  0x2
+#define RFB_FRAME_BUFFER_UPDATE_REQUEST  0x3
+// Add more message types as needed
+
+// RFB protocol version
+#define RFB_VERSION_MAJOR  0x3
+#define RFB_VERSION_MINOR  0x8
+#define RFB_VERSION_STRING  "RFB 003.008\n"
+
+// RFB protocol security types
+#define RFB_SECURITY_TYPE_INVALID  0x0
+#define RFB_SECURITY_TYPE_NONE  0x1
+
+
 const char * find_newest_file(const std::string& directory, const std::string& extension = ".esotrace") {
     std::string newest_file;
     DIR* dir = opendir(directory.c_str());
@@ -134,14 +154,32 @@ void parse_log_line_next_turn_distance(const char* match[]) {
     }
 }
 
-#define PORT 5900  // Default VNC port
-#define BUFFER_SIZE 4096  // Adjust the buffer size as per your requirement
+// Function to receive RFB messages
+void receive_rfb_messages(int sockfd) {
+    unsigned char buffer[BUFFER_SIZE];
+    int bytes_received;
+
+    // Receive messages continuously
+    while ((bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0)) > 0) {
+        // Process the received message
+        // For now, just print the received data
+        printf("Received %d bytes: ", bytes_received);
+        for (int i = 0; i < bytes_received; ++i) {
+            printf("%02X ", buffer[i]);
+        }
+        printf("\n");
+    }
+
+    if (bytes_received < 0) {
+        perror("Error receiving data");
+        exit(EXIT_FAILURE);
+    }
+}
+
 
 int rfb() {
-    int sockfd, newsockfd;
-    struct sockaddr_in serv_addr, cli_addr;
-    socklen_t clilen;
-    unsigned char buffer[BUFFER_SIZE];  // Use unsigned char for binary data
+    int sockfd;
+    struct sockaddr_in serv_addr;
 
     // Create socket
     sockfd = socket(AF_INET, SOCK_STREAM, 0);
@@ -151,54 +189,19 @@ int rfb() {
     }
 
     // Initialize socket structure
-    memset((char *) &serv_addr, 0, sizeof(serv_addr));
+    memset((char *)&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
     serv_addr.sin_addr.s_addr = INADDR_ANY;
-    serv_addr.sin_port = htons(PORT);
+    serv_addr.sin_port = htons(RFB_PORT);
 
-    // Bind the host address
-    if (bind(sockfd, (struct sockaddr *) &serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Error on binding");
+    // Connect to the VNC server
+    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+        perror("Error connecting to server");
         exit(EXIT_FAILURE);
     }
 
-    // Listen for incoming connections
-    listen(sockfd, 5);
-    clilen = sizeof(cli_addr);
-
-    // Accept actual connection
-    newsockfd = accept(sockfd, (struct sockaddr *) &cli_addr, &clilen);
-    if (newsockfd < 0) {
-        perror("Error on accept");
-        exit(EXIT_FAILURE);
-    }
-
-    // Receive VNC data into RAM
-    unsigned char *vnc_data = NULL;
-    int total_bytes_received = 0;
-    int bytes_received;
-    while ((bytes_received = recv(newsockfd, buffer, BUFFER_SIZE, 0)) > 0) {
-        // Reallocate memory for vnc_data
-    	vnc_data = (unsigned char *)realloc(vnc_data, total_bytes_received + bytes_received);
-        if (vnc_data == NULL) {
-            perror("Error allocating memory");
-            exit(EXIT_FAILURE);
-        }
-        // Copy received data into vnc_data buffer
-        memcpy(vnc_data + total_bytes_received, buffer, bytes_received);
-        total_bytes_received += bytes_received;
-    }
-    if (bytes_received < 0) {
-        perror("Error receiving data");
-        exit(EXIT_FAILURE);
-    }
-
-    printf("Received %d bytes of VNC data.\n", total_bytes_received);
-
-    // Process the received VNC data in memory here
-
-    // Free the allocated memory
-    free(vnc_data);
+    // Receive RFB messages
+    receive_rfb_messages(sockfd);
 
     return 0;
 }
@@ -401,21 +404,6 @@ void Init() {
 
 }
 
-// Draw frame
-void Draw() {
-    // Set viewport
-    //glViewport(0, 0, 800, 480);
-    //glClear(GL_COLOR_BUFFER_BIT);
-    //glUseProgram(programObject);
-    dotX += 0.01f; // Increment x-coordinate to move dot horizontally
-    if (dotX > 1.0f) {
-        dotX = -1.0f;
-    }
-    GLfloat vertices[] = { dotX, dotY };
-    //glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 0, vertices);
-    //glEnableVertexAttribArray(0);
-    //glDrawArrays(GL_POINTS, 0, 1);
-}
 
 int main(int argc, char *argv[]) {
 
@@ -575,7 +563,6 @@ int main(int argc, char *argv[]) {
         char speed[12]; // Adjust size accordingly
          snprintf(speed, sizeof(speed), "%i Frame", frameCount);
 
-    	Draw();
     	//drawRing();
     	print_string(-150, 0, speed, 1, 1, 1,50);
 

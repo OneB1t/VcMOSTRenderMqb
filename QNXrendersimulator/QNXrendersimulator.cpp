@@ -1,5 +1,4 @@
-﻿#include <Windows.h>
-#include <EGL/egl.h>
+﻿#include <EGL/egl.h>
 #include <regex>
 #include <iostream>
 #include <string>
@@ -15,6 +14,14 @@
 #define STB_TRUETYPE_IMPLEMENTATION  // force following include to generate implementation
 #include "stb_easyfont.h"
 #include <chrono>
+
+#include <windows.h>
+#include <winsock2.h>
+#include <ws2tcpip.h>
+#include <iphlpapi.h>
+#include <stdio.h>
+#include <fcntl.h>
+
 
 
 //GLES setup
@@ -47,6 +54,23 @@ std::string icons_folder_path = "icons";
 // AA sensors data location
 std::string     sd = "i:1304:216";
 
+// Constants for VNC protocol
+const char* PROTOCOL_VERSION = "RFB 003.003\n"; // Client initialization message
+const char FRAMEBUFFER_UPDATE_REQUEST[] = {
+    3,     // Message Type: FramebufferUpdateRequest
+    0,
+    0,0,
+    0,0,
+    15,0,
+    8,112
+};
+const char CLIENT_INIT[] = {
+    1,     // Message Type: FramebufferUpdateRequest
+};
+
+const char ENCODING[] = {
+    2,0,0,1,0,0,0,0
+};
 
 
 std::string find_newest_file(const std::string& directory, const std::string& extension = ".esotrace") {
@@ -375,6 +399,10 @@ void drawArrow() {
     glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 }
 
+int16_t byteArrayToInt16(const char* byteArray) {
+    return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
+}
+
 const int NUM_SEGMENTS = 30;
 // Function to render the ring
 void drawRing() {
@@ -439,6 +467,147 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) 
     return 0;
 }
 
+static void BuildSockAddr(SOCKADDR* const SockAddr, char const* const IPAddress, WORD const Port)
+{
+    SOCKADDR_IN* const SIn = (SOCKADDR_IN*)SockAddr;
+
+    SIn->sin_family = AF_INET;
+    inet_pton(AF_INET, IPAddress, &SIn->sin_addr);
+    SIn->sin_port = htons(Port);
+}
+
+SOCKET MySocketOpen(int const Type, WORD const Port)
+{
+
+    int Protocol = (Type == SOCK_STREAM) ? IPPROTO_TCP : IPPROTO_UDP;
+
+    SOCKET Socket = WSASocket(AF_INET, Type, Protocol, NULL, 0, 0);
+
+    if (Socket != INVALID_SOCKET)
+    {
+        SOCKADDR SockAddr = { 0 };
+
+        BuildSockAddr(&SockAddr, NULL, Port);
+
+        if (bind(Socket, &SockAddr, sizeof(SockAddr)) != 0)
+        {
+            closesocket(Socket);
+            Socket = INVALID_SOCKET;
+        }
+    }
+
+    return Socket;
+}
+
+int parseFramebufferUpdate(SOCKET socket_fd) {
+    // Read message-type (1 byte) - not used, assuming it's always 0
+    char messageType[1];
+    if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading message type\n");
+        return -1;
+    }
+
+    // Read padding (1 byte) - unused
+    char padding[1];
+    if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading padding\n");
+        return -1;
+    }
+
+    // Read number-of-rectangles (2 bytes)
+    char numberOfRectangles[2];
+    if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading number of rectangles\n");
+        return -1;
+    }
+
+    // Calculate the total size of the message
+    int pixelSizeToRead = 0; // message-type + padding + number-of-rectangles
+
+    // Now parse each rectangle
+    for (int i = 0; i < byteArrayToInt16(numberOfRectangles); i++) {
+        // Read rectangle header
+        char xPosition[2];
+        char yPosition[2];
+        char width[2];
+        char height[2];
+        char encodingType[4]; // S32
+
+        if (!recv(socket_fd, xPosition, 2, MSG_WAITALL) ||
+            !recv(socket_fd, yPosition, 2, MSG_WAITALL) ||
+            !recv(socket_fd, width, 2, MSG_WAITALL) ||
+            !recv(socket_fd, height, 2, MSG_WAITALL) ||
+            !recv(socket_fd, encodingType, 4, MSG_WAITALL)) {
+            fprintf(stderr, "Error reading rectangle header\n");
+            return -1;
+        }
+
+        // Calculate size of pixel data based on encoding type (assuming 4 bytes per pixel)
+        int pixelDataSize = byteArrayToInt16(width) * byteArrayToInt16(height) * 4;
+
+        // Add the size of each rectangle header and pixel data to the total message size
+        pixelSizeToRead += pixelDataSize;
+    }
+
+    printf("FramebufferUpdate message size: %d bytes\n", pixelSizeToRead);
+    return pixelSizeToRead;
+}
+
+void writeBMP(char * imageData, int width, int height, const char* fileName) {
+    FILE* file;
+    if (fopen_s(&file, fileName, "wb") != 0) {
+        perror("Error opening file");
+        return;
+    }
+
+    // BMP header
+    uint8_t bmpHeader[] = { 0x42, 0x4D }; // BM
+    fwrite(bmpHeader, sizeof(uint8_t), 2, file);
+    int fileSize = 14 + 40 + width * height * 4;
+    fwrite(&fileSize, sizeof(int), 1, file); // File size
+    int reserved = 0;
+    fwrite(&reserved, sizeof(int), 1, file); // Reserved
+    int dataOffset = 14 + 40;
+    fwrite(&dataOffset, sizeof(int), 1, file); // Data offset
+
+    // DIB header
+    int headerSize = 40;
+    fwrite(&headerSize, sizeof(int), 1, file); // Header size
+    fwrite(&width, sizeof(int), 1, file); // Image width
+    fwrite(&height, sizeof(int), 1, file); // Image height
+    short colorPlanes = 1;
+    fwrite(&colorPlanes, sizeof(short), 1, file); // Color planes
+    short bitsPerPixel = 32;
+    fwrite(&bitsPerPixel, sizeof(short), 1, file); // Bits per pixel
+    int compressionMethod = 0;
+    fwrite(&compressionMethod, sizeof(int), 1, file); // Compression method
+    int imageSize = width * height * 4;
+    fwrite(&imageSize, sizeof(int), 1, file); // Image size (bytes)
+    int horizontalResolution = 0;
+    fwrite(&horizontalResolution, sizeof(int), 1, file); // Horizontal resolution
+    int verticalResolution = 0;
+    fwrite(&verticalResolution, sizeof(int), 1, file); // Vertical resolution
+    int numColorsInPalette = 0;
+    fwrite(&numColorsInPalette, sizeof(int), 1, file); // Number of colors in the palette
+    int importantColors = 0;
+    fwrite(&importantColors, sizeof(int), 1, file); // Important colors
+
+    // Write pixel data (BGR format) in reverse row order
+    for (int y = height - 1; y >= 0; y--) {
+        for (int x = 0; x < width; x++) {
+            int pixelIndex = (y * width + x) * 4; // Calculate pixel index in ARGB format
+            fwrite(&imageData[pixelIndex + 2], sizeof(uint8_t), 1, file); // Blue
+            fwrite(&imageData[pixelIndex + 1], sizeof(uint8_t), 1, file); // Green
+            fwrite(&imageData[pixelIndex], sizeof(uint8_t), 1, file); // Red
+            fwrite(&imageData[pixelIndex + 3], sizeof(uint8_t), 1, file); // Alpha
+        }
+    }
+
+    fclose(file);
+    printf("BMP image saved successfully.\n");
+}
+
+
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     LPCWSTR className = L"OpenGL_ES_Window-QNXrender";
     MSG msg;
@@ -495,13 +664,135 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     // Initialize OpenGL ES
     Init();
 
+    WSADATA WSAData = { 0 };
+    WSAStartup(0x202, &WSAData);
+    SOCKET MySocket = MySocketOpen(SOCK_STREAM, 0);
+
+
+    // Connect to VNC server
+    sockaddr_in serverAddr;
+    serverAddr.sin_family = AF_INET;
+    inet_pton(AF_INET, "192.168.1.189", &serverAddr.sin_addr);
+    serverAddr.sin_port = htons(5900); // VNC default port
+    if (connect(MySocket, reinterpret_cast<sockaddr*>(&serverAddr), sizeof(serverAddr)) == SOCKET_ERROR) {
+        std::cerr << "connection failed" << std::endl;
+        closesocket(MySocket);
+        WSACleanup();
+        return 1;
+    }
+    // Receive server initialization message
+    char serverInitMsg[12];
+    int bytesReceived = recv(MySocket, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
+    if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
+        std::cerr << "error receiving server initialization message" << std::endl;
+        closesocket(MySocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Send client protocol version message
+    if (send(MySocket, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) == SOCKET_ERROR) {
+        std::cerr << "error sending client initialization message" << std::endl;
+        closesocket(MySocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Security handshake
+    char securityHandshake[4];
+    int numOfTypes = recv(MySocket, securityHandshake, sizeof(securityHandshake), 0);
+    printf("%s\n", securityHandshake);
+    send(MySocket, "\x01", 1,0); // ClientInit
+
+    // Read framebuffer width (2 bytes) ServerInit
+    char framebufferWidth[2];
+    if (!recv(MySocket, framebufferWidth, 2,0)) {
+        fprintf(stderr, "Error reading framebuffer width\n");
+        return 1;
+    }
+    int16_t framebufferWidthInt = ((framebufferWidth[0] & 0xFF) << 8) | (framebufferWidth[1] & 0xFF);
+
+
+    // Read framebuffer width (2 bytes) ServerInit
+    char framebufferHeight[2];
+    if (!recv(MySocket, framebufferHeight, 2, 0)) {
+        fprintf(stderr, "Error reading framebuffer height\n");
+        return 1;
+    }
+    int16_t framebufferHeightInt = ((framebufferHeight[0] & 0xFF) << 8) | (framebufferHeight[1] & 0xFF);
+
+
+    // Read pixel format (16 bytes) ServerInit
+    char pixelFormat[16];
+    if (!recv(MySocket, pixelFormat, 16, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading pixel format\n");
+        return 1;
+    }
+
+
+    // Read pixel format (4 bytes) ServerInit
+    char nameLenght[4];
+    if (!recv(MySocket, nameLenght, 4, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading pixel format\n");
+        return 1;
+    }
+    uint32_t nameLengthInt = ((nameLenght[0] & 0xFF) << 24) |
+        ((nameLenght[1] & 0xFF) << 16) |
+        ((nameLenght[2] & 0xFF) << 8) |
+        (nameLenght[3] & 0xFF);
+
+    char name[32];
+    if (!recv(MySocket, name, nameLengthInt, MSG_WAITALL)) {
+        fprintf(stderr, "Error reading pixel format\n");
+        return 1;
+    }
+
+    // Send encoding update request
+    if (send(MySocket, ENCODING, 8, 0) == SOCKET_ERROR) {
+        std::cerr << "error sending framebuffer update request" << std::endl;
+        closesocket(MySocket);
+        WSACleanup();
+        return 1;
+    }
+
+    // Send encoding update request
+    if (send(MySocket, FRAMEBUFFER_UPDATE_REQUEST, 10, 0) == SOCKET_ERROR) {
+        std::cerr << "error sending framebuffer update request" << std::endl;
+        closesocket(MySocket);
+        WSACleanup();
+        return 1;
+    }
+        
     int frameCount = 0;
     double fps = 0.0;
     time_t startTime = time(NULL);
     // Main loop
     while (true)
     {
+        int leftSizeForRead = parseFramebufferUpdate(MySocket);
+        std::vector<char> framebufferUpdate(leftSizeForRead); // Allocate memory for receiving framebuffer update
+        bytesReceived = recv(MySocket, framebufferUpdate.data(), leftSizeForRead, MSG_WAITALL);
+        if (bytesReceived == SOCKET_ERROR || bytesReceived == 0) {
+            std::cerr << "error receiving framebuffer update" << std::endl;
+           // break; // Exit loop if there's an error or the connection is closed
+        }
+
+
+        // Write received data to a file
+        char filename[256];
+        sprintf_s(filename, sizeof(filename), "framebuffer_update%d.bin", frameCount);
+        writeBMP(framebufferUpdate.data(), framebufferWidthInt, framebufferHeightInt, filename);
+
         frameCount++;
+
+        // Send encoding update request
+        if (send(MySocket, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) == SOCKET_ERROR) {
+            std::cerr << "error sending framebuffer update request" << std::endl;
+            closesocket(MySocket);
+            WSACleanup();
+            return 1;
+        }
+
         if (frameCount % 20 == 0) // 3 times per second
         {
             std::string log_file_path = find_newest_file(log_directory_path);
@@ -562,6 +853,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     eglDestroyContext(eglDisplay, eglContext);
     eglDestroySurface(eglDisplay, eglSurface);
     eglTerminate(eglDisplay);
+
+    while (GetMessage(&msg, NULL, 0, 0)) {
+        TranslateMessage(&msg);
+        DispatchMessage(&msg);
+    }
 
     return msg.wParam;
 }
