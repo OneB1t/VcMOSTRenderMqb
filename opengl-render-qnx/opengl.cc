@@ -231,9 +231,27 @@ void Init() {
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
 
+    // Check for compile errors
+    GLint vertexShaderCompileStatus;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
+    if (vertexShaderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        printf("Vertex shader compilation failed: %s\n", infoLog);
+    }
+
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
+
+    // Check for compile errors
+    GLint fragmentShaderCompileStatus;
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
+    if (fragmentShaderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        printf("Fragment shader compilation failed: %s\n", infoLog);
+    }
 
     // Create program object
     programObject = glCreateProgram();
@@ -241,9 +259,17 @@ void Init() {
     glAttachShader(programObject, fragmentShader);
     glLinkProgram(programObject);
 
+    // Check for linking errors
+    GLint programLinkStatus;
+    glGetProgramiv(programObject, GL_LINK_STATUS, &programLinkStatus);
+    if (programLinkStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetProgramInfoLog(programObject, 512, NULL, infoLog);
+        printf("Program linking failed: %s\n", infoLog);
+    }
+
     // Set clear color to black
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-
 }
 
 
@@ -335,6 +361,7 @@ int main(int argc, char *argv[]) {
            fprintf(stderr, "Create surface failed: 0x%x\n", eglSurface);
            exit(EXIT_FAILURE);
        }
+       eglBindAPI(EGL_OPENGL_ES_API);
 
        const EGLint context_attribs[] = {
                EGL_CONTEXT_CLIENT_VERSION, 2,
@@ -370,7 +397,7 @@ int main(int argc, char *argv[]) {
     // Initialize socket structure
     memset((char *)&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr("192.168.1.189");
+    serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
     serv_addr.sin_port = htons(5900);
 
     // Connect to the VNC server

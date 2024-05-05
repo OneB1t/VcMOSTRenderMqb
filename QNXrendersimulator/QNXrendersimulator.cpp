@@ -136,6 +136,7 @@ std::string read_data(const std::string& position) {
 
 // Vertex shader source
 const char* vertexShaderSource =
+"#version 100\n" // Specify ES 2.0 version
 "attribute vec2 position;    \n"
 "attribute vec2 texCoord;     \n" // Add texture coordinate attribute
 "varying vec2 v_texCoord;     \n" // Declare varying variable for texture coordinate
@@ -154,7 +155,8 @@ const char* vertexShaderSource =
 //"}                         \n";
 
 const char* fragmentShaderSource =
-"precision mediump float;\n"
+"#version 100\n" // Specify ES 2.0 version
+"precision highp float;\n"
 "varying vec2 v_texCoord;\n"
 "uniform sampler2D texture;\n"
 "void main()\n"
