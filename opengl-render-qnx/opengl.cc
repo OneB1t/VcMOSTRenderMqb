@@ -112,6 +112,39 @@ static EGLenum checkErrorEGL(const char* msg)
     return error;
 }
 
+GLuint CreateSimpleTexture2D()
+{
+    // Texture object handle
+    GLuint textureId;
+
+    // 2x2 Image, 3 bytes per pixel (R, G, B)
+    GLubyte pixels[4 * 3] =
+    {
+       255,   0,   0, // Red
+         0, 255,   0, // Green
+         0,   0, 255, // Blue
+       255, 255,   0  // Yellow
+    };
+
+    // Use tightly packed data
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // Generate a texture object
+    glGenTextures(1, &textureId);
+
+    // Bind the texture object
+    glBindTexture(GL_TEXTURE_2D, textureId);
+
+    // Load the texture
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+
+    // Set the filtering mode
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    return textureId;
+}
+
 int16_t byteArrayToInt16(const char* byteArray) {
     return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
 }
@@ -523,7 +556,7 @@ int main(int argc, char *argv[]) {
 
         // Load image data into texture
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-
+        CreateSimpleTexture2D();
         // Set up shader program and attributes
         // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
 

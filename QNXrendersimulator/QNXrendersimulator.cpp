@@ -243,15 +243,42 @@ void Init() {
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
     glCompileShader(vertexShader);
 
+    // Check for compile errors
+    GLint vertexShaderCompileStatus;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
+    if (vertexShaderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        printf("Vertex shader compilation failed: %s\n", infoLog);
+    }
+
     GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
     glCompileShader(fragmentShader);
+
+    // Check for compile errors
+    GLint fragmentShaderCompileStatus;
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
+    if (fragmentShaderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        printf("Fragment shader compilation failed: %s\n", infoLog);
+    }
 
     // Create program object
     programObject = glCreateProgram();
     glAttachShader(programObject, vertexShader);
     glAttachShader(programObject, fragmentShader);
     glLinkProgram(programObject);
+
+    // Check for linking errors
+    GLint programLinkStatus;
+    glGetProgramiv(programObject, GL_LINK_STATUS, &programLinkStatus);
+    if (programLinkStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetProgramInfoLog(programObject, 512, NULL, infoLog);
+        printf("Program linking failed: %s\n", infoLog);
+    }
 
     // Set clear color to black
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -303,6 +330,39 @@ SOCKET MySocketOpen(int const Type, WORD const Port)
     }
 
     return Socket;
+}
+
+GLuint CreateSimpleTexture2D()
+{
+    // Texture object handle
+    GLuint textureId;
+
+    // 2x2 Image, 3 bytes per pixel (R, G, B)
+    GLubyte pixels[4 * 3] =
+    {
+       255,   0,   0, // Red
+         0, 255,   0, // Green
+         0,   0, 255, // Blue
+       255, 255,   0  // Yellow
+    };
+
+    // Use tightly packed data
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+
+    // Generate a texture object
+    glGenTextures(1, &textureId);
+
+    // Bind the texture object
+    glBindTexture(GL_TEXTURE_2D, textureId);
+
+    // Load the texture
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
+
+    // Set the filtering mode
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    return textureId;
 }
 
 int parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frameBufferHeight) {
@@ -554,7 +614,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         // Load image data into texture
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-
+        CreateSimpleTexture2D();
         // Set up shader program and attributes
         // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
 
