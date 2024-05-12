@@ -45,10 +45,10 @@ const char* fragmentShaderSource =
 "}\n";
 
 GLfloat vertices[] = {
-   -0.5f,  0.8, 0.0f,  // Top Left
-    0.5f,  0.8f, 0.0f,  // Top Right
-    0.5f, -1.80f, 0.0f,  // Bottom Right
-   -0.5f, -1.80f, 0.0f   // Bottom Left
+   -0.8f,  0.8, 0.0f,  // Top Left
+    0.8f,  0.8f, 0.0f,  // Top Right
+    0.8f, -0.8f, 0.0f,  // Bottom Right
+   -0.8f, -0.8f, 0.0f   // Bottom Left
 };
 
 // Texture coordinates
@@ -110,39 +110,6 @@ static EGLenum checkErrorEGL(const char* msg)
     EGLenum error = eglGetError();
     fprintf(stderr, "%s: %s\n", msg, errmsg[error - EGL_SUCCESS]);
     return error;
-}
-
-GLuint CreateSimpleTexture2D()
-{
-    // Texture object handle
-    GLuint textureId;
-
-    // 2x2 Image, 3 bytes per pixel (R, G, B)
-    GLubyte pixels[4 * 3] =
-    {
-       255,   0,   0, // Red
-         0, 255,   0, // Green
-         0,   0, 255, // Blue
-       255, 255,   0  // Yellow
-    };
-
-    // Use tightly packed data
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-
-    // Generate a texture object
-    glGenTextures(1, &textureId);
-
-    // Bind the texture object
-    glBindTexture(GL_TEXTURE_2D, textureId);
-
-    // Load the texture
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, 2, 2, 0, GL_RGB, GL_UNSIGNED_BYTE, pixels);
-
-    // Set the filtering mode
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
-    return textureId;
 }
 
 int16_t byteArrayToInt16(const char* byteArray) {
@@ -337,6 +304,12 @@ int main(int argc, char *argv[]) {
     eglDisplay = eglGetDisplay( EGL_DEFAULT_DISPLAY ); // DONE
     eglInitialize( eglDisplay, 0, 0); // DONE
 
+    GLint maxSize;
+    glGetIntegerv(GL_MAX_TEXTURE_SIZE, &maxSize);
+
+    // Print the maximum texture size
+    printf("Maximum texture size supported: %d\n", maxSize);
+
     // Specify EGL configurations
 	EGLint config_attribs[] = {
 		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -508,9 +481,13 @@ int main(int argc, char *argv[]) {
     glGenTextures(1, &textureID);
     glBindTexture(GL_TEXTURE_2D, textureID);
 
-    // Set texture parameters
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    // Set texture parameters (optional)
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+     // Set texture wrapping mode (optional)
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     // Main loop
     while (true)
@@ -554,9 +531,12 @@ int main(int argc, char *argv[]) {
         //snprintf(test, sizeof(test), "%.2f FPS\n", fps);
         //print_string(-300, 200, test, 1, 1, 1, 200); // print FPS
 
+        printf("Framebuffer Width: %d\n", framebufferWidthInt);
+        printf("Framebuffer Height: %d\n", framebufferHeightInt);
+
         // Load image data into texture
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-        CreateSimpleTexture2D();
+        //CreateSimpleTexture2D(framebufferUpdate,framebufferWidthInt, framebufferHeightInt);
         // Set up shader program and attributes
         // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
 
