@@ -45,10 +45,10 @@ const char* fragmentShaderSource =
 "}\n";
 
 GLfloat vertices[] = {
-   -0.8f,  0.8, 0.0f,  // Top Left
-    0.8f,  0.8f, 0.0f,  // Top Right
-    0.8f, -0.8f, 0.0f,  // Bottom Right
-   -0.8f, -0.8f, 0.0f   // Bottom Left
+   -0.8f,  0.7, 0.0f,  // Top Left
+    0.8f,  0.7f, 0.0f,  // Top Right
+    0.8f, -0.6f, 0.0f,  // Bottom Right
+   -0.8f, -0.6f, 0.0f   // Bottom Left
 };
 
 // Texture coordinates
