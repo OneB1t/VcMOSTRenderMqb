@@ -2,7 +2,19 @@
 
 # VNC2MIB2VC - opengl-render-qnx
 ![map](https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/52123bb5-55de-4fb4-871c-195b8fcebdc3)
-REQUIREMENTS: MIB2 with SSH access, Virtual cockpit, VNC server on phone/notebook (tested with Xiaomi 12 + droidVNC-NG)
+PRE-REQUISITIES: MIB2 with SSH access, Virtual cockpit, VNC server on phone/notebook (tested with Xiaomi 12 + droidVNC-NG)
+
+mount all required parts as R/W see https://github.com/jilleb/mib2-toolbox/wiki/SSH-Login for more info
+
+```
+mount -uw /net/mmx/mnt/app
+echo "/bin/mount -uw /net/mmx/fs/sda0 2>/dev/null" >> /net/mmx/mnt/app/root/.profile
+echo "/bin/mount -uw /net/mmx/fs/sda1 2>/dev/null" >> /net/mmx/mnt/app/root/.profile
+echo "/bin/mount -uw /mnt/app" >> /net/mmx/mnt/app/root/.profile
+echo "/bin/mount -uw /mnt/system" >> /net/mmx/mnt/app/root/.profile
+mount -ur /net/mmx/mnt/app
+```
+
 
 This software is able to show any VNC stream on virtual cockpit. Final compile file is stored inside opengl-render-qnx/arm/o-le-v7/opengl-render-qnx 
 How to make it run:
