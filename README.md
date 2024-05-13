@@ -21,8 +21,8 @@ How to make it run:
 1) upload compiled file (opengl-render-qnx/arm/o-le-v7/opengl-render-qnx) to MIB2 unit via SCP (10.173.189.1) or use SD-card (/fs/sda0 on unit itself)
 2) MIB2 SSH: chmod +x /fs/sda0/opengl-render-qnx
 3) MIB2 SSH: use dmdt to prepare new context and switch this context to VC run those 2 commands (later this is not going to be needed)
-   - dmdt dc 99 3
-   - dmdt sc 4 99 
+   - /eso/bin/apps/dmdt dc 99 3
+   - /eso/bin/apps/dmdt sc 4 99 
 5) PHONE: connect mobile phone to MIB2 wifi (WARNING it is expected that phone will get 10.173.189.62 this IP is hardcoded for now)
 6) PHONE: run droidVNC-NG (https://github.com/bk138/droidVNC-NG) and set following parameters:
    - port 5900
