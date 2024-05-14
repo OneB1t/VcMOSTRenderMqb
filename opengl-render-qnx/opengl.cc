@@ -116,6 +116,30 @@ int16_t byteArrayToInt16(const char* byteArray) {
     return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
 }
 
+struct Command {
+    const char *command;
+    const char *error_message;
+};
+
+void execute_initial_commands() {
+    struct Command commands[] = {
+        {"/eso/bin/apps/dmdt dc 99 3", "Create new display table with context 3 failed with error"},
+        {"/eso/bin/apps/dmdt sc 4 99", "Set display 4 (VC) to display table 99 failed with error"}
+    };
+    size_t num_commands = sizeof(commands) / sizeof(commands[0]);
+
+    for (size_t i = 0; i < num_commands; ++i) {
+        const char *command = commands[i].command;
+        const char *error_message = commands[i].error_message;
+        printf("Executing '%s'\n", command);
+
+        // Execute the command
+        int ret = system(command);
+        if (ret != 0) {
+            fprintf(stderr, "%s: %d\n", error_message, ret);
+        }
+    }
+}
 
 int parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight) {
     // Read message-type (1 byte) - not used, assuming it's always 0
@@ -403,7 +427,13 @@ int main(int argc, char *argv[]) {
     // Initialize socket structure
     memset((char *)&serv_addr, 0, sizeof(serv_addr));
     serv_addr.sin_family = AF_INET;
-    serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
+    if (argc > 1) {
+         // Use IP address from command line argument
+    	 serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
+     } else {
+         // Fallback to default IP address if no argument is provided
+    	 serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
+     }
     serv_addr.sin_port = htons(5900);
 
     // Connect to the VNC server
