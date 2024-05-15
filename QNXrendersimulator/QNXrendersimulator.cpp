@@ -22,6 +22,7 @@
 #include <stdio.h>
 #include <fcntl.h>
 #include "miniz.h"
+#include <Windows.h>
 
 
 
@@ -361,7 +362,7 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
     *numberOfRectangles = byteArrayToInt16(numberOfRect);
 
     // Calculate the total size of the message
-    int pixelSizeToRead = 0; // message-type + padding + number-of-rectangles
+    int totalLoadedSize = 0; // message-type + padding + number-of-rectangles
     char* finalFrameBuffer = (char*)malloc(1);
 
     // Now parse each rectangle
@@ -382,7 +383,13 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
             fprintf(stderr, "Error reading rectangle header\n");
             return NULL;
         }
+        char msgbufX[100];
+        sprintf_s(msgbufX, "My variable is %d\n", byteArrayToInt16(xPosition));
+        OutputDebugStringA(msgbufX);
 
+        char msgbufY[100];
+        sprintf_s(msgbufY, "My variable is %d\n", byteArrayToInt16(yPosition));
+        OutputDebugStringA(msgbufY);
         *frameBufferWidth = byteArrayToInt16(width);
         *frameBufferHeight = byteArrayToInt16(height);
         if (encodingType[3] == '\x6') // ZLIB encoding
@@ -390,11 +397,11 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
             if (!recv(socket_fd, compressedDataSize, 4, MSG_WAITALL)) {
                 fprintf(stderr, "Zlib compressedDataSize not found\n");
             }
-            char* framebufferUpdateRectangle = (char*)malloc(byteArrayToInt32(compressedDataSize));
-            int bytesReceived2 = recv(socket_fd, framebufferUpdateRectangle, byteArrayToInt32(compressedDataSize), MSG_WAITALL);
-            if (bytesReceived2 < 0) {
+            char* compressedData = (char*)malloc(byteArrayToInt32(compressedDataSize));
+            int compresedDataReceivedSize = recv(socket_fd, compressedData, byteArrayToInt32(compressedDataSize), MSG_WAITALL);
+            if (compresedDataReceivedSize < 0) {
                 perror("error receiving framebuffer update rectangle");
-                free(framebufferUpdateRectangle);
+                free(compressedData);
                 return NULL;
             }
 
@@ -406,9 +413,14 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
                 return NULL;
             }
 
+            // Resize finalFrameBuffer to accommodate the appended data
+
+            totalLoadedSize = totalLoadedSize + (*frameBufferWidth * *frameBufferHeight * 4);
+            finalFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
+
             // Decompress the data
-            strm.avail_in = bytesReceived2;
-            strm.next_in = (Bytef*)framebufferUpdateRectangle;
+            strm.avail_in = compresedDataReceivedSize;
+            strm.next_in = (Bytef*)compressedData;
             strm.avail_out = *frameBufferWidth * *frameBufferHeight * 4; // Use the actual size of the decompressed data
             strm.next_out = (Bytef*)decompressedData;
 
@@ -418,32 +430,17 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
                 fprintf(stderr, "Error: Failed to decompress zlib data: %s\n", strm.msg);
                 inflateEnd(&strm);
                 free(decompressedData);
-                free(framebufferUpdateRectangle);
+                free(compressedData);
                 return NULL;
             }
 
-
-
-            // Resize finalFrameBuffer to accommodate the appended data
-            if(i == 0)
-            { 
-                pixelSizeToRead = *frameBufferWidth * *frameBufferHeight * 4 * *numberOfRectangles;
-                finalFrameBuffer = (char*)realloc(finalFrameBuffer, pixelSizeToRead);
-            }
-            size_t offset = i * *frameBufferWidth * *frameBufferHeight * 4;
+            int offset = i * *frameBufferWidth * *frameBufferHeight * 4;
             memcpy(finalFrameBuffer + offset, decompressedData, *frameBufferWidth * *frameBufferHeight * 4);
             // Free memory allocated for framebufferUpdateRectangle
-            free(framebufferUpdateRectangle);
+            free(compressedData);
             free(decompressedData);
-
-            // Use finalFrameBuffer as needed
-
-            // Free memory allocated for finalFrameBuffer when done
-            //free(finalFrameBuffer);
         }
 
-        // Calculate size of pixel data based on encoding type (assuming 4 bytes per pixel)
-                // Send update request
 
     }        
     return finalFrameBuffer;
