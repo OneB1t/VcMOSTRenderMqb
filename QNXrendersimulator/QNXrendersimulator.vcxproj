@@ -132,9 +132,11 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="miniz.h" />
     <ClInclude Include="QNXrendersimulator.h" />
   </ItemGroup>
   <ItemGroup>
+    <ClCompile Include="miniz.c" />
     <ClCompile Include="QNXrendersimulator.cpp" />
   </ItemGroup>
   <ItemGroup>

@@ -18,9 +18,15 @@
     <ClInclude Include="QNXrendersimulator.h">
       <Filter>Hlavičkové soubory</Filter>
     </ClInclude>
+    <ClInclude Include="miniz.h">
+      <Filter>Hlavičkové soubory</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="QNXrendersimulator.cpp">
+      <Filter>Zdrojové soubory</Filter>
+    </ClCompile>
+    <ClCompile Include="miniz.c">
       <Filter>Zdrojové soubory</Filter>
     </ClCompile>
   </ItemGroup>

@@ -4,3 +4,5 @@
 /.idea/modules.xml
 /.idea/VcMOSTRenderMqb.iml
 /.idea/vcs.xml
+/QNXrendersimulator/.vs/*
+/QNXrendersimulator/x64/*
