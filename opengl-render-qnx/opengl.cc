@@ -22,6 +22,7 @@
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
+#include "miniz.h"
 
 // Vertex shader source
 const char* vertexShaderSource =
@@ -73,8 +74,8 @@ const char CLIENT_INIT[] = {
     1,     // Message Type: FramebufferUpdateRequest
 };
 
-const char ENCODING[] = {
-    2,0,0,1,0,0,0,0
+const char ZLIB_ENCODING[] = {
+    2,0,0,2,0,0,0,6,0,0,0,0
 };
 
 GLuint programObject;
@@ -116,6 +117,10 @@ int16_t byteArrayToInt16(const char* byteArray) {
     return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
 }
 
+int32_t byteArrayToInt32(const char* byteArray) {
+    return ((int32_t)(byteArray[0] & 0xFF) << 24) | ((int32_t)(byteArray[1] & 0xFF) << 16) | ((int32_t)(byteArray[2] & 0xFF) << 8) | (byteArray[3] & 0xFF);
+}
+
 struct Command {
     const char *command;
     const char *error_message;
@@ -141,31 +146,35 @@ void execute_initial_commands() {
     }
 }
 
-int parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight) {
+
+char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm, int* finalHeight)
+{
     // Read message-type (1 byte) - not used, assuming it's always 0
     char messageType[1];
     if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
         fprintf(stderr, "Error reading message type\n");
-        return -1;
+        return NULL;
     }
 
     // Read padding (1 byte) - unused
     char padding[1];
     if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
         fprintf(stderr, "Error reading padding\n");
-        return -1;
+        return NULL;
     }
 
     // Read number-of-rectangles (2 bytes)
     char numberOfRectangles[2];
     if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
         fprintf(stderr, "Error reading number of rectangles\n");
-        return -1;
+        return NULL;
     }
 
     // Calculate the total size of the message
-    int pixelSizeToRead = 0; // message-type + padding + number-of-rectangles
-
+    int totalLoadedSize = 0; // message-type + padding + number-of-rectangles
+    char* finalFrameBuffer = (char*)malloc(1);
+    int offset = 0;
+    int ret = 0;
     // Now parse each rectangle
     for (int i = 0; i < byteArrayToInt16(numberOfRectangles); i++) {
         // Read rectangle header
@@ -174,6 +183,7 @@ int parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBuffe
         char width[2];
         char height[2];
         char encodingType[4]; // S32
+        char compressedDataSize[4]; // S32
 
         if (!recv(socket_fd, xPosition, 2, MSG_WAITALL) ||
             !recv(socket_fd, yPosition, 2, MSG_WAITALL) ||
@@ -181,21 +191,64 @@ int parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBuffe
             !recv(socket_fd, height, 2, MSG_WAITALL) ||
             !recv(socket_fd, encodingType, 4, MSG_WAITALL)) {
             fprintf(stderr, "Error reading rectangle header\n");
-            return -1;
+            return NULL;
         }
+
         *frameBufferWidth = byteArrayToInt16(width);
         *frameBufferHeight = byteArrayToInt16(height);
-        // Calculate size of pixel data based on encoding type (assuming 4 bytes per pixel)
-        int pixelDataSize = byteArrayToInt16(width) * byteArrayToInt16(height) * 4;
+        *finalHeight = *finalHeight + *frameBufferHeight;
+        if (encodingType[3] == '\x6') // ZLIB encoding
+        {
+            if (!recv(socket_fd, compressedDataSize, 4, MSG_WAITALL)) {
+                fprintf(stderr, "Zlib compressedDataSize not found\n");
+            }
+            char* compressedData = (char*)malloc(byteArrayToInt32(compressedDataSize));
+            int compresedDataReceivedSize = recv(socket_fd, compressedData, byteArrayToInt32(compressedDataSize), MSG_WAITALL);
+            if (compresedDataReceivedSize < 0) {
+                perror("error receiving framebuffer update rectangle");
+                free(compressedData);
+                return NULL;
+            }
 
-        // Add the size of each rectangle header and pixel data to the total message size
-        pixelSizeToRead += pixelDataSize;
+            // Allocate memory for decompressed data (assuming it's at most the same size as compressed)
+            char* decompressedData = (char*)malloc(*frameBufferWidth * *frameBufferHeight * 4);
+            if (!decompressedData) {
+                perror("Error allocating memory for decompressed data");
+                free(decompressedData);
+                return NULL;
+            }
+
+            // Resize finalFrameBuffer to accommodate the appended data
+
+            totalLoadedSize = totalLoadedSize + (*frameBufferWidth * *frameBufferHeight * 4);
+            finalFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
+
+            // Decompress the data
+            strm.avail_in = compresedDataReceivedSize;
+            strm.next_in = (Bytef*)compressedData;
+            strm.avail_out = *frameBufferWidth * *frameBufferHeight * 4; // Use the actual size of the decompressed data
+            strm.next_out = (Bytef*)decompressedData;
+
+            ret = inflate(&strm, Z_NO_FLUSH);
+
+            if (ret < 0 && ret != Z_BUF_ERROR) {
+                fprintf(stderr, "Error: Failed to decompress zlib data: %s\n", strm.msg);
+                inflateEnd(&strm);
+                free(decompressedData);
+                free(compressedData);
+                return NULL;
+            }
+
+
+            memcpy(finalFrameBuffer + offset, decompressedData, *frameBufferWidth * *frameBufferHeight * 4);
+            offset = offset + (*frameBufferWidth * *frameBufferHeight * 4);
+            // Free memory allocated for framebufferUpdateRectangle
+            free(compressedData);
+            free(decompressedData);
+        }
     }
-
-    printf("FramebufferUpdate message size: %d bytes\n", pixelSizeToRead);
-    return pixelSizeToRead;
+    return finalFrameBuffer;
 }
-
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
     char inputBuffer[2000] = { 0 }; // ~500 chars
     GLfloat triangleBuffer[2000] = { 0 };
@@ -494,13 +547,14 @@ int main(int argc, char *argv[]) {
     }
 
     // Send encoding update requests
-    if (send(sockfd, ENCODING, sizeof(ENCODING), 0) < 0 ||
+    if (send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0) < 0 ||
         send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
         std::cerr << "Error sending framebuffer update request" << std::endl;
         return 1;
     }
     int framebufferWidthInt = 0;
     int framebufferHeightInt = 0;
+    int finalHeight = 0;
 
 
     int frameCount = 0;
@@ -519,73 +573,62 @@ int main(int argc, char *argv[]) {
      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
      glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
-    // Main loop
-    while (true)
-    {
-    	 frameCount++;
-    	    int leftSizeForRead = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt);
-    	    char *framebufferUpdate = (char *)malloc(leftSizeForRead * sizeof(char));
-    	    if (framebufferUpdate == NULL) {
-    	        perror("malloc failed");
-    	        return 1;
-    	    }
-    	    bytesReceived = recv(sockfd, framebufferUpdate, leftSizeForRead, MSG_WAITALL);
-    	    if (bytesReceived < 0) {
-    	        perror("error receiving framebuffer update");
-    	        free(framebufferUpdate);
-    	        return 1;
-    	    }
+     z_stream strm;
+     strm.zalloc = Z_NULL;
+     strm.zfree = Z_NULL;
+     strm.opaque = Z_NULL;
 
-        // Send encoding update request
-        if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-            std::cerr << "error sending framebuffer update request" << std::endl;
-            return 1;
-        }
 
-        // Calculate elapsed time
-        time_t currentTime = time(NULL);
-        double elapsedTime = difftime(currentTime, startTime);
+     int ret = inflateInit(&strm);
+     if (ret != Z_OK) {
+         fprintf(stderr, "Error: Failed to initialize zlib decompression\n");
+         return NULL;
+     }
 
-        // Calculate FPS every second
-        if (elapsedTime >= 1.0) {
-            // Calculate FPS
-            fps = frameCount / elapsedTime;
+     // Main loop
+     while (true)
+     {
+         frameCount++;
+         char * framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
 
-            // Reset frame count and start time
-            frameCount = 0;
-            startTime = currentTime;
-        }
-        glClear(GL_COLOR_BUFFER_BIT); // clear all
-        glUseProgram(programObject);
-        //char test[10]; // Adjust size accordingly
-        //snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-        //print_string(-300, 200, test, 1, 1, 1, 200); // print FPS
+         // Send encoding update request
+         if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+             std::cerr << "error sending framebuffer update request" << std::endl;
+             return 1;
+         }
 
-        printf("Framebuffer Width: %d\n", framebufferWidthInt);
-        printf("Framebuffer Height: %d\n", framebufferHeightInt);
+         // Calculate elapsed time
+         time_t currentTime = time(NULL);
+         double elapsedTime = difftime(currentTime, startTime);
 
-        // Load image data into texture
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, framebufferHeightInt, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-        //CreateSimpleTexture2D(framebufferUpdate,framebufferWidthInt, framebufferHeightInt);
-        // Set up shader program and attributes
-        // (assuming you have a shader program with attribute vec3 position and attribute vec2 texCoord)
+         // Calculate FPS every second
+         if (elapsedTime >= 1.0) {
+             // Calculate FPS
+             fps = frameCount / elapsedTime;
 
-        // Set vertex positions
-        GLint positionAttribute = glGetAttribLocation(programObject, "position");
-        glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
-        glEnableVertexAttribArray(positionAttribute);
+             // Reset frame count and start time
+             frameCount = 0;
+             startTime = currentTime;
+         }
+         glClear(GL_COLOR_BUFFER_BIT); // clear all
+         glUseProgram(programObject);
+         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
 
-        // Set texture coordinates
-        GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
-        glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
-        glEnableVertexAttribArray(texCoordAttrib);
+         // Set vertex positions
+         GLint positionAttribute = glGetAttribLocation(programObject, "position");
+         glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+         glEnableVertexAttribArray(positionAttribute);
 
-        // Draw quad
-        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-        eglSwapBuffers(eglDisplay, eglSurface);
-        free(framebufferUpdate); // Free the dynamically allocated memory
-
-    }
+         // Set texture coordinates
+         GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
+         glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+         glEnableVertexAttribArray(texCoordAttrib);
+         finalHeight = 0;
+         // Draw quad
+         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+         eglSwapBuffers(eglDisplay, eglSurface);
+         free(framebufferUpdate); // Free the dynamically allocated memory
+     }
 
     // Cleanup
     glDeleteTextures(1, &textureID);
