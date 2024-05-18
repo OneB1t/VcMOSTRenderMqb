@@ -146,6 +146,25 @@ void execute_initial_commands() {
     }
 }
 
+void execute_final_commands() {
+    struct Command commands[] = {
+        {"/eso/bin/apps/dmdt sc 4 71", "Set display 4 (VC) to display table 99 failed with error"}
+    };
+    size_t num_commands = sizeof(commands) / sizeof(commands[0]);
+
+    for (size_t i = 0; i < num_commands; ++i) {
+        const char *command = commands[i].command;
+        const char *error_message = commands[i].error_message;
+        printf("Executing '%s'\n", command);
+
+        // Execute the command
+        int ret = system(command);
+        if (ret != 0) {
+            fprintf(stderr, "%s: %d\n", error_message, ret);
+        }
+    }
+}
+
 
 char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm, int* finalHeight)
 {
@@ -303,6 +322,7 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
 
 // Initialize OpenGL ES
 void Init() {
+	execute_initial_commands();
     // Load and compile shaders
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
@@ -636,6 +656,6 @@ int main(int argc, char *argv[]) {
     eglDestroySurface(eglDisplay, eglSurface);
     eglDestroyContext(eglDisplay, eglContext);
     eglTerminate(eglDisplay);
-
+    execute_final_commands();
     return EXIT_SUCCESS;
 }
