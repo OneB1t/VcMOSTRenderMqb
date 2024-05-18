@@ -1,8 +1,17 @@
 
 
 # VNC2MIB2VC - opengl-render-qnx
+
+https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/54d5f16b-2c2a-484a-a8b8-4e4e5c39675a
+
 ![map](https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/52123bb5-55de-4fb4-871c-195b8fcebdc3)
 PRE-REQUISITIES: MIB2 with SSH access, Virtual cockpit, VNC server on phone/notebook (tested with Xiaomi 12 + droidVNC-NG)
+
+
+
+
+
+
 
 mount all required parts as R/W see https://github.com/jilleb/mib2-toolbox/wiki/SSH-Login for more info also enable SSH to make installation easier
 
