@@ -23,6 +23,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 #include "miniz.h"
+#include <unistd.h>
+
 
 // Vertex shader source
 const char* vertexShaderSource =
@@ -148,7 +150,7 @@ void execute_initial_commands() {
 
 void execute_final_commands() {
     struct Command commands[] = {
-        {"/eso/bin/apps/dmdt sc 4 71", "Set display 4 (VC) to display table 99 failed with error"}
+        {"/eso/bin/apps/dmdt sc 4 70", "Set display 4 (VC) to display table 70 failed with error"}
     };
     size_t num_commands = sizeof(commands) / sizeof(commands[0]);
 
@@ -322,7 +324,6 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
 
 // Initialize OpenGL ES
 void Init() {
-	execute_initial_commands();
     // Load and compile shaders
     GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
     glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
@@ -486,176 +487,185 @@ int main(int argc, char *argv[]) {
 
     // Initialize OpenGL ES
     Init();
+    while(true)
+    {
+        std::cout << "Main loop executed" << std::endl;
+    	execute_final_commands();
+		int sockfd;
+		struct sockaddr_in serv_addr;
 
-    int sockfd;
-    struct sockaddr_in serv_addr;
+		// Create socket
+		sockfd = socket(AF_INET, SOCK_STREAM, 0);
+		if (sockfd < 0) {
+			perror("Error opening socket");
+			continue;
+		}
 
-    // Create socket
-    sockfd = socket(AF_INET, SOCK_STREAM, 0);
-    if (sockfd < 0) {
-        perror("Error opening socket");
-        exit(EXIT_FAILURE);
+		// Initialize socket structure
+		memset((char *)&serv_addr, 0, sizeof(serv_addr));
+		serv_addr.sin_family = AF_INET;
+		if (argc > 1) {
+			 // Use IP address from command line argument
+			 serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
+		 } else {
+			 // Fallback to default IP address if no argument is provided
+			 serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
+		 }
+		serv_addr.sin_port = htons(5900);
+
+		// Connect to the VNC server
+		if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
+			perror("Error connecting to server");
+			usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+			continue;
+		}
+
+		if(sockfd != NULL)
+		{
+			// we have connection so swap to different view
+			execute_initial_commands();
+		}
+
+		// Receive server initialization message
+		char serverInitMsg[12];
+		int bytesReceived = recv(sockfd, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
+		if (bytesReceived < 0) {
+			std::cerr << "Error receiving server initialization message" << std::endl;
+			continue;
+		}
+		// Send client protocol version message
+		if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
+			std::cerr << "Error sending client initialization message" << std::endl;
+			continue;
+		}
+		// Security handshake
+		char securityHandshake[4];
+		recv(sockfd, securityHandshake, sizeof(securityHandshake), 0);
+		printf("%s\n", securityHandshake);
+		send(sockfd, "\x01", 1, 0); // ClientInit
+
+		// Read framebuffer width and height
+		char framebufferWidth[2];
+		char framebufferHeight[2];
+
+		if (!recv(sockfd, framebufferWidth, 2, 0) || !recv(sockfd, framebufferHeight, 2, 0)) {
+			fprintf(stderr, "Error reading framebuffer dimensions\n");
+			continue;
+		}
+
+		// Read pixel format and name length
+		char pixelFormat[16];
+		char nameLength[4];
+
+		if (!recv(sockfd, pixelFormat, sizeof(pixelFormat), MSG_WAITALL) ||
+			!recv(sockfd, nameLength, sizeof(nameLength), MSG_WAITALL)) {
+			fprintf(stderr, "Error reading pixel format or name length\n");
+			continue;
+		}
+
+		uint32_t nameLengthInt = (nameLength[0] << 24) | (nameLength[1] << 16) | (nameLength[2] << 8) | nameLength[3];
+
+		// Read server name
+		char name[32];
+		if (!recv(sockfd, name, nameLengthInt, MSG_WAITALL)) {
+			fprintf(stderr, "Error reading server name\n");
+			continue;
+		}
+
+		// Send encoding update requests
+		if (send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0) < 0 ||
+			send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+			std::cerr << "Error sending framebuffer update request" << std::endl;
+			continue;
+		}
+		int framebufferWidthInt = 0;
+		int framebufferHeightInt = 0;
+		int finalHeight = 0;
+
+
+		int frameCount = 0;
+		double fps = 0.0;
+		time_t startTime = time(NULL);
+
+		GLuint textureID;
+		glGenTextures(1, &textureID);
+		glBindTexture(GL_TEXTURE_2D, textureID);
+
+		// Set texture parameters (optional)
+		 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+		 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+		 // Set texture wrapping mode (optional)
+		 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+		 glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+		 z_stream strm;
+		 strm.zalloc = Z_NULL;
+		 strm.zfree = Z_NULL;
+		 strm.opaque = Z_NULL;
+
+
+		 int ret = inflateInit(&strm);
+		 if (ret != Z_OK) {
+			 fprintf(stderr, "Error: Failed to initialize zlib decompression\n");
+			 continue;
+		 }
+
+		 // Main loop
+		 while (true)
+		 {
+			 frameCount++;
+			 char * framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
+			 if(framebufferUpdate == NULL)
+			 {
+				 break;
+			 }
+			 // Send encoding update request
+			 if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+				 std::cerr << "error sending framebuffer update request" << std::endl;
+				 continue;
+			 }
+
+			 // Calculate elapsed time
+			 time_t currentTime = time(NULL);
+			 double elapsedTime = difftime(currentTime, startTime);
+
+			 // Calculate FPS every second
+			 if (elapsedTime >= 1.0) {
+				 // Calculate FPS
+				 fps = frameCount / elapsedTime;
+
+				 // Reset frame count and start time
+				 frameCount = 0;
+				 startTime = currentTime;
+			 }
+			 glClear(GL_COLOR_BUFFER_BIT); // clear all
+			 glUseProgram(programObject);
+			 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
+
+			 // Set vertex positions
+			 GLint positionAttribute = glGetAttribLocation(programObject, "position");
+			 glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+			 glEnableVertexAttribArray(positionAttribute);
+
+			 // Set texture coordinates
+			 GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
+			 glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+			 glEnableVertexAttribArray(texCoordAttrib);
+			 finalHeight = 0;
+			 // Draw quad
+			 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+			 eglSwapBuffers(eglDisplay, eglSurface);
+			 free(framebufferUpdate); // Free the dynamically allocated memory
+		 }
+		glDeleteTextures(1, &textureID);
+		execute_final_commands();
     }
+		// Cleanup
+		eglSwapBuffers(eglDisplay, eglSurface);
+		eglDestroySurface(eglDisplay, eglSurface);
+		eglDestroyContext(eglDisplay, eglContext);
+		eglTerminate(eglDisplay);
 
-    // Initialize socket structure
-    memset((char *)&serv_addr, 0, sizeof(serv_addr));
-    serv_addr.sin_family = AF_INET;
-    if (argc > 1) {
-         // Use IP address from command line argument
-    	 serv_addr.sin_addr.s_addr = inet_addr(argv[1]);
-     } else {
-         // Fallback to default IP address if no argument is provided
-    	 serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
-     }
-    serv_addr.sin_port = htons(5900);
-
-    // Connect to the VNC server
-    if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
-        perror("Error connecting to server");
-        exit(EXIT_FAILURE);
-    }
-
-    // Receive server initialization message
-    char serverInitMsg[12];
-    int bytesReceived = recv(sockfd, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
-
-    if (bytesReceived < 0) {
-        std::cerr << "Error receiving server initialization message" << std::endl;
-        return 1;
-    }
-
-    // Send client protocol version message
-    if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
-        std::cerr << "Error sending client initialization message" << std::endl;
-        return 1;
-    }
-
-    // Security handshake
-    char securityHandshake[4];
-    recv(sockfd, securityHandshake, sizeof(securityHandshake), 0);
-    printf("%s\n", securityHandshake);
-    send(sockfd, "\x01", 1, 0); // ClientInit
-
-    // Read framebuffer width and height
-    char framebufferWidth[2];
-    char framebufferHeight[2];
-
-    if (!recv(sockfd, framebufferWidth, 2, 0) || !recv(sockfd, framebufferHeight, 2, 0)) {
-        fprintf(stderr, "Error reading framebuffer dimensions\n");
-        return 1;
-    }
-
-
-
-    // Read pixel format and name length
-    char pixelFormat[16];
-    char nameLength[4];
-
-    if (!recv(sockfd, pixelFormat, sizeof(pixelFormat), MSG_WAITALL) ||
-        !recv(sockfd, nameLength, sizeof(nameLength), MSG_WAITALL)) {
-        fprintf(stderr, "Error reading pixel format or name length\n");
-        return 1;
-    }
-
-    uint32_t nameLengthInt = (nameLength[0] << 24) | (nameLength[1] << 16) | (nameLength[2] << 8) | nameLength[3];
-
-    // Read server name
-    char name[32];
-    if (!recv(sockfd, name, nameLengthInt, MSG_WAITALL)) {
-        fprintf(stderr, "Error reading server name\n");
-        return 1;
-    }
-
-    // Send encoding update requests
-    if (send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0) < 0 ||
-        send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-        std::cerr << "Error sending framebuffer update request" << std::endl;
-        return 1;
-    }
-    int framebufferWidthInt = 0;
-    int framebufferHeightInt = 0;
-    int finalHeight = 0;
-
-
-    int frameCount = 0;
-    double fps = 0.0;
-    time_t startTime = time(NULL);
-
-    GLuint textureID;
-    glGenTextures(1, &textureID);
-    glBindTexture(GL_TEXTURE_2D, textureID);
-
-    // Set texture parameters (optional)
-     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-     // Set texture wrapping mode (optional)
-     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-     z_stream strm;
-     strm.zalloc = Z_NULL;
-     strm.zfree = Z_NULL;
-     strm.opaque = Z_NULL;
-
-
-     int ret = inflateInit(&strm);
-     if (ret != Z_OK) {
-         fprintf(stderr, "Error: Failed to initialize zlib decompression\n");
-         return NULL;
-     }
-
-     // Main loop
-     while (true)
-     {
-         frameCount++;
-         char * framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
-
-         // Send encoding update request
-         if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-             std::cerr << "error sending framebuffer update request" << std::endl;
-             return 1;
-         }
-
-         // Calculate elapsed time
-         time_t currentTime = time(NULL);
-         double elapsedTime = difftime(currentTime, startTime);
-
-         // Calculate FPS every second
-         if (elapsedTime >= 1.0) {
-             // Calculate FPS
-             fps = frameCount / elapsedTime;
-
-             // Reset frame count and start time
-             frameCount = 0;
-             startTime = currentTime;
-         }
-         glClear(GL_COLOR_BUFFER_BIT); // clear all
-         glUseProgram(programObject);
-         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-
-         // Set vertex positions
-         GLint positionAttribute = glGetAttribLocation(programObject, "position");
-         glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
-         glEnableVertexAttribArray(positionAttribute);
-
-         // Set texture coordinates
-         GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
-         glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
-         glEnableVertexAttribArray(texCoordAttrib);
-         finalHeight = 0;
-         // Draw quad
-         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-         eglSwapBuffers(eglDisplay, eglSurface);
-         free(framebufferUpdate); // Free the dynamically allocated memory
-     }
-
-    // Cleanup
-    glDeleteTextures(1, &textureID);
-    eglSwapBuffers(eglDisplay, eglSurface);
-    eglDestroySurface(eglDisplay, eglSurface);
-    eglDestroyContext(eglDisplay, eglContext);
-    eglTerminate(eglDisplay);
-    execute_final_commands();
     return EXIT_SUCCESS;
 }
