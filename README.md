@@ -34,8 +34,8 @@ How to make it run:
    - port 5900
    - no password
    - scaling (30-50%) this depends on your phone resolution -> lower value means faster streaming
-5) MIB2 SSH: run ./fs/sda0/opengl-render-qnx
-6) VC: switch to navigation map and it should now show phone image
+5) MIB2 SSH: run export IPL_CONFIG_DIR=/etc/eso/production ./fs/sda0/opengl-render-qnx
+7) VC: switch to navigation map and it should now show phone image
 
 When you want to get rid if this just restart your MIB2 device and everything is back to stock.
 
