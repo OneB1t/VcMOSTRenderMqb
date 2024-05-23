@@ -24,6 +24,7 @@
 #include <arpa/inet.h>
 #include "miniz.h"
 #include <unistd.h>
+#include <sys/time.h>
 
 
 // Vertex shader source
@@ -89,6 +90,7 @@ GLfloat dotX = 0.0f;
 GLfloat dotY = 0.0f;
 int windowWidth = 800;
 int windowHeight = 480;
+
 
 static EGLenum checkErrorEGL(const char* msg)
 {
@@ -512,6 +514,26 @@ int main(int argc, char *argv[]) {
 			 serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
 		 }
 		serv_addr.sin_port = htons(5900);
+
+		struct timeval timeout;
+		timeout.tv_sec = 3; // 3 seconds timeout
+		timeout.tv_usec = 0;
+
+	    // Set receive timeout
+	    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
+	        perror("Set receive timeout failed");
+	        close(sockfd);
+	        exit(EXIT_FAILURE);
+	    }
+
+	    // Set send timeout
+	    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
+	        perror("Set send timeout failed");
+	        close(sockfd);
+	        exit(EXIT_FAILURE);
+	    }
+
+
 
 		// Connect to the VNC server
 		if (connect(sockfd, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) < 0) {
