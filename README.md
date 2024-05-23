@@ -2,6 +2,9 @@
 
 # VNC2MIB2VC - opengl-render-qnx
 
+Telegram group:
+https://t.me/+MCIqkmX6bjY3NTE0
+
 https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/54d5f16b-2c2a-484a-a8b8-4e4e5c39675a
 
 ![map](https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/52123bb5-55de-4fb4-871c-195b8fcebdc3)
