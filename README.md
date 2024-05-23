@@ -39,6 +39,96 @@ How to make it run:
 
 When you want to get rid if this just restart your MIB2 device and everything is back to stock.
 
+For autostartup (this is for advanced users only now please be really careful this can brick unit boot and UART is needed to fix it):
+1. MIB2 SSH: mount root filesystem as R/W (if you do not know how to do this please stop here)
+2. MIB2 SSH: copy opengl-render-qnx into /navigation/opengl-render-qnx (mv /fs/sda0/opengl-render-qnx /navigation/opengl-render-qnx)
+3. MIB2 SSH: and open /etc/boot/startup.sh -> find normal_startup() method inside the file and add following lines to the end of this method
+ ```  
+    if [ -f /navigation/opengl-render-qnx ]; then
+        chmod 0777 /navigation/opengl-render-qnx
+        /navigation/opengl-render-qnx &
+    else
+        echo "File /navigation/opengl-render-qnx does not exist."
+    fi
+```
+
+Final method should look like this:
+```
+normal_startup()
+{
+    set_environment_variables
+    start_early_framework &
+    start_early_drivers
+
+    check_filesystems
+
+    start_drivers &
+    info "create_ramdisk ..."
+    create_sysramdisk 20
+    create_ramdisk 10 organizer /organizerdisk
+    check_sop
+    waitfor_quick /mnt/app/eso $TIMEOUT
+    start_network &
+    start_framework
+    start_hmi &
+
+    waitfor_quick /mnt/app/img_ver.txt $TIMEOUT
+    { read IMG_VER1; read IMG_VER2; } < /mnt/app/img_ver.txt
+    info "MMX BENCH_Startup IMG_VER $IMG_VER1 $IMG_VER2"
+    echo "MMX BENCH_Startup IMG_VER $IMG_VER1 $IMG_VER2"
+    pidin info
+    start_system_services &
+    start_autorunner &
+
+    # New driver from eso replaced i2c-smsc_bridge
+    if [ -f /mnt/app/mediaconnectorVerbosity-v3_enabled ]
+    then
+        /eso/bin/apps/mediaconnector -v3 -map 0x11,0x10 &
+    elif [ -f /mnt/app/mediaconnectorVerbosity-v6_enabled ]
+    then
+        /eso/bin/apps/mediaconnector -v6 -map 0x11,0x10 &
+    else
+        /eso/bin/apps/mediaconnector -v1 -map 0x11,0x10 &
+    fi
+
+    start_system_tools
+
+    start_dvdrom_driver
+
+    #  MOST not for DELPHI
+    # DTV
+    waitfor_quick /net/rcc/dev/name/local/inic/isoRX1 2
+    if [ $? -eq 0 ]; then
+        devp-iso-mmx-mib2 -R -S196 -i0 -B3 -P32 -Q24 -m/dev/mlb -MisoRX1 -v5 -p16 &
+    fi
+    # AVDC
+    waitfor_quick /net/rcc/dev/name/local/inic/isoRX2 2
+    if [ $? -eq 0 ]; then
+        devp-iso-mmx-mib2 -R -S196 -i1 -B3 -P32 -Q24 -m/dev/mlb -MisoRX2 -v5 -p16 &
+    fi
+    # Passenger Map
+    waitfor_quick /net/rcc/dev/name/local/inic/isoTX1 2
+    if [ $? -eq 0 ]; then
+        devp-iso-mmx-mib2 -T -S188 -i2 -B3 -P64 -Q18 -m/dev/mlb -MisoTX1 -v5 -p16 &
+    fi
+    # DCIVIDEO: Kombi Map
+    waitfor_quick /net/rcc/dev/name/local/inic/isoTX2 2
+    if [ $? -eq 0 ]; then
+        devp-iso-mmx-mib2 -T -S188 -i3 -B3 -P64 -Q18 -m/dev/mlb -MisoTX2 -v5 -p16 &
+    fi
+
+    if [ -f /navigation/opengl-render-qnx ]; then
+        chmod 0777 /navigation/opengl-render-qnx
+        /navigation/opengl-render-qnx &
+    else
+        echo "File /navigation/opengl-render-qnx does not exist."
+    fi
+}
+```
+4. restart MIB to see if everything works as expected
+
+
+
 
 
 
