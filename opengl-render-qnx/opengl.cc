@@ -48,15 +48,31 @@ const char* fragmentShaderSource =
 "    gl_FragColor = texture2D(texture, v_texCoord);\n"
 "}\n";
 
-GLfloat vertices[] = {
-   -0.8f,  0.85, 0.0f,  // Top Left
-    0.95f,  0.85f, 0.0f,  // Top Right
-    0.95f, -0.6f, 0.0f,  // Bottom Right
-   -0.8f, -0.6f, 0.0f   // Bottom Left
+GLfloat landscapeVertices[] = {
+   -0.8f,  0.7, 0.0f,  // Top Left
+    0.8f,  0.7f, 0.0f,  // Top Right
+    0.8f, -0.67f, 0.0f,  // Bottom Right
+   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
+};
+GLfloat portraitVertices[] = {
+   -0.3f,  0.7, 0.0f,  // Top Left
+    0.3f,  0.7f, 0.0f,  // Top Right
+    0.3f, -0.65f, 0.0f,  // Bottom Right
+   -0.3f, -0.65f, 0.0f   // Bottom Leftvi
+};
+
+
+
+// Texture coordinates
+GLfloat landscapeTexCoords[] = {
+    0.0f, 0.0f,  // Bottom Left
+    0.9f, 0.00f,  // Bottom Right
+    0.9f, 1.0f,  // Top Right
+    0.0f, 1.0f   // Top Left
 };
 
 // Texture coordinates
-GLfloat texCoords[] = {
+GLfloat portraitTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
     1.0f, 0.0f,  // Bottom Right
     1.0f, 1.0f,  // Top Right
@@ -516,21 +532,21 @@ int main(int argc, char *argv[]) {
 		serv_addr.sin_port = htons(5900);
 
 		struct timeval timeout;
-		timeout.tv_sec = 3; // 3 seconds timeout
+		timeout.tv_sec = 10; // 10 seconds timeout
 		timeout.tv_usec = 0;
 
 	    // Set receive timeout
 	    if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
 	        perror("Set receive timeout failed");
 	        close(sockfd);
-	        exit(EXIT_FAILURE);
+	        continue;
 	    }
 
 	    // Set send timeout
 	    if (setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
 	        perror("Set send timeout failed");
 	        close(sockfd);
-	        exit(EXIT_FAILURE);
+	        continue;
 	    }
 
 
@@ -553,11 +569,13 @@ int main(int argc, char *argv[]) {
 		int bytesReceived = recv(sockfd, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
 		if (bytesReceived < 0) {
 			std::cerr << "Error receiving server initialization message" << std::endl;
+			close(sockfd);
 			continue;
 		}
 		// Send client protocol version message
 		if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
 			std::cerr << "Error sending client initialization message" << std::endl;
+			close(sockfd);
 			continue;
 		}
 		// Security handshake
@@ -572,6 +590,7 @@ int main(int argc, char *argv[]) {
 
 		if (!recv(sockfd, framebufferWidth, 2, 0) || !recv(sockfd, framebufferHeight, 2, 0)) {
 			fprintf(stderr, "Error reading framebuffer dimensions\n");
+			close(sockfd);
 			continue;
 		}
 
@@ -582,6 +601,7 @@ int main(int argc, char *argv[]) {
 		if (!recv(sockfd, pixelFormat, sizeof(pixelFormat), MSG_WAITALL) ||
 			!recv(sockfd, nameLength, sizeof(nameLength), MSG_WAITALL)) {
 			fprintf(stderr, "Error reading pixel format or name length\n");
+			close(sockfd);
 			continue;
 		}
 
@@ -591,6 +611,7 @@ int main(int argc, char *argv[]) {
 		char name[32];
 		if (!recv(sockfd, name, nameLengthInt, MSG_WAITALL)) {
 			fprintf(stderr, "Error reading server name\n");
+			close(sockfd);
 			continue;
 		}
 
@@ -598,6 +619,7 @@ int main(int argc, char *argv[]) {
 		if (send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0) < 0 ||
 			send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
 			std::cerr << "Error sending framebuffer update request" << std::endl;
+			close(sockfd);
 			continue;
 		}
 		int framebufferWidthInt = 0;
@@ -640,12 +662,14 @@ int main(int argc, char *argv[]) {
 			 char * framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
 			 if(framebufferUpdate == NULL)
 			 {
+				 close(sockfd);
 				 break;
 			 }
 			 // Send encoding update request
 			 if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
 				 std::cerr << "error sending framebuffer update request" << std::endl;
-				 continue;
+				 close(sockfd);
+				 break;
 			 }
 
 			 // Calculate elapsed time
@@ -666,13 +690,21 @@ int main(int argc, char *argv[]) {
 			 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
 
 			 // Set vertex positions
-			 GLint positionAttribute = glGetAttribLocation(programObject, "position");
-			 glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
-			 glEnableVertexAttribArray(positionAttribute);
+	         GLint positionAttribute = glGetAttribLocation(programObject, "position");
+	         if (framebufferWidthInt > finalHeight)
+	               glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, landscapeVertices);
+	            else
+	                glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, portraitVertices);
+
+	         glEnableVertexAttribArray(positionAttribute);
 
 			 // Set texture coordinates
-			 GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
-			 glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
+	            GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
+			 if (framebufferWidthInt > finalHeight)
+				glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, landscapeTexCoords);
+			 else
+				glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, portraitTexCoords);
+
 			 glEnableVertexAttribArray(texCoordAttrib);
 			 finalHeight = 0;
 			 // Draw quad
