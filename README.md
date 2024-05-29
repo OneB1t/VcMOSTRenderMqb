@@ -63,6 +63,16 @@ For autostartup (this is for advanced users only now please be really careful th
     fi
 ```
 
+In case that custom IP is required please modify like this where 10.10.10.10 is IP of phone/vnc server device:
+ ```  
+    if [ -f /navigation/opengl-render-qnx ]; then
+        chmod 0777 /navigation/opengl-render-qnx
+        /navigation/opengl-render-qnx 10.10.10.10 &
+    else
+        echo "File /navigation/opengl-render-qnx does not exist."
+    fi
+```
+
 Final method should look like this:
 ```
 normal_startup()
