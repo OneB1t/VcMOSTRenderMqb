@@ -9,7 +9,7 @@
 #include <regex.h>
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
-#include <dlfcn.h>   // for dynamic loading functions such as dlopen, dlsym, and dlclose
+#include <dlfcn.h>   // for dynamic loading functions such as dlopen, 	lsym, and dlclose
 
 #include <iostream>
 #include <string>
@@ -27,6 +27,9 @@
 #include <sys/time.h>
 
 #include <netinet/tcp.h>
+#include <fcntl.h>
+#include <errno.h>
+
 
 #ifndef TCP_USER_TIMEOUT
     #define TCP_USER_TIMEOUT 18  // how long for loss retry before timeout [ms]
@@ -190,25 +193,41 @@ void execute_final_commands() {
 char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm, int* finalHeight)
 {
 	// Read message-type (1 byte) - not used, assuming it's always 0
-	char messageType[1];
-	if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
-		fprintf(stderr, "Error reading message type\n");
-		return NULL;
-	}
+    // Message type
+    char messageType[1];
+    if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            std::cerr << "Receive timeout occurred while reading message type" << std::endl;
+        } else {
+            std::cerr << "Error reading message type: " << strerror(errno) << std::endl;
+        }
+        close(socket_fd);
+        return NULL;
+    }
 
 	// Read padding (1 byte) - unused
-	char padding[1];
-	if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
-		fprintf(stderr, "Error reading padding\n");
-		return NULL;
-	}
+    char padding[1];
+    if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            std::cerr << "Receive timeout occurred while reading padding" << std::endl;
+        } else {
+            std::cerr << "Error reading padding: " << strerror(errno) << std::endl;
+        }
+        close(socket_fd);
+        return NULL;
+    }
 
 	// Read number-of-rectangles (2 bytes)
-	char numberOfRectangles[2];
-	if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
-		fprintf(stderr, "Error reading number of rectangles\n");
-		return NULL;
-	}
+    char numberOfRectangles[2];
+    if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
+        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+            std::cerr << "Receive timeout occurred while reading number of rectangles" << std::endl;
+        } else {
+            std::cerr << "Error reading number of rectangles: " << strerror(errno) << std::endl;
+        }
+        close(socket_fd);
+        return NULL;
+    }
 
 	// Calculate the total size of the message
 	int totalLoadedSize = 0; // message-type + padding + number-of-rectangles
@@ -239,22 +258,38 @@ char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBuf
 		*finalHeight = *finalHeight + *frameBufferHeight;
 		if (encodingType[3] == '\x6') // ZLIB encoding
 		{
-			if (!recv(socket_fd, compressedDataSize, 4, MSG_WAITALL)) {
-				fprintf(stderr, "Zlib compressedDataSize not found\n");
-			}
+		    // Read zlib compressed data size with timeout handling
+		    if (!recv(socket_fd, compressedDataSize, 4, MSG_WAITALL)) {
+		        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		            std::cerr << "Receive timeout occurred while reading zlib compressed data size" << std::endl;
+		        } else {
+		            std::cerr << "Zlib compressed data size not found: " << strerror(errno) << std::endl;
+		        }
+		        close(socket_fd);
+		        return NULL;
+		    }
+
 			char* compressedData = (char*)malloc(byteArrayToInt32(compressedDataSize));
+
+
 			int compresedDataReceivedSize = recv(socket_fd, compressedData, byteArrayToInt32(compressedDataSize), MSG_WAITALL);
-			if (compresedDataReceivedSize < 0) {
-				perror("error receiving framebuffer update rectangle");
-				free(compressedData);
-				return NULL;
-			}
+		    if (compresedDataReceivedSize < 0) {
+		        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		            std::cerr << "Receive timeout occurred while receiving compressed data" << std::endl;
+		        } else {
+		            perror("Error receiving compressed data");
+		        }
+		        free(compressedData);
+		        close(socket_fd);
+		        return NULL;
+		    }
 
 			// Allocate memory for decompressed data (assuming it's at most the same size as compressed)
 			char* decompressedData = (char*)malloc(*frameBufferWidth * *frameBufferHeight * 4);
 			if (!decompressedData) {
 				perror("Error allocating memory for decompressed data");
 				free(decompressedData);
+		        close(socket_fd);
 				return NULL;
 			}
 
@@ -275,6 +310,7 @@ char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBuf
 				inflateEnd(&strm);
 				free(decompressedData);
 				free(compressedData);
+		        close(socket_fd);
 				return NULL;
 			}
 
@@ -511,14 +547,52 @@ int main(int argc, char* argv[]) {
 		printf("Main loop executed");
 		execute_final_commands();
 		int sockfd;
+	    fd_set write_fds;
+	    int result;
+	    int so_error;
+	    socklen_t len = sizeof(so_error);
 		struct sockaddr_in serv_addr;
+
+	    int keepalive = 1; // Enable keepalive
+	    int keepidle = 2; // Idle time before sending the first keepalive probe (in seconds)
 
 		// Create socket
 		sockfd = socket(AF_INET, SOCK_STREAM, 0);
 		if (sockfd < 0) {
 			perror("Error opening socket");
+			close(sockfd);
 			continue;
 		}
+
+	    // Enable TCP keepalive
+	    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
+	        perror("setsockopt SO_KEEPALIVE");
+			close(sockfd);
+			continue;
+	    }
+
+	    // Set the time (in seconds) the connection needs to remain idle before TCP starts sending keepalive probes
+	    if (setsockopt(sockfd, IPPROTO_TCP, TCP_KEEPALIVE, &keepidle, sizeof(keepidle)) < 0) {
+	        perror("setsockopt TCP_KEEPIDLE");
+			close(sockfd);
+			continue;
+	    }
+
+	    printf("TCP keepalive enabled and configured on the socket.\n");
+
+
+	    // Set socket to non-blocking mode
+	    int flags = fcntl(sockfd, F_GETFL, 0);
+	    if (flags < 0) {
+	        perror("fcntl F_GETFL");
+			close(sockfd);
+			continue;
+	    }
+	    if (fcntl(sockfd, F_SETFL, flags | O_NONBLOCK) < 0) {
+	        perror("fcntl F_SETFL");
+			close(sockfd);
+			continue;
+	    }
 
 		// Initialize socket structure
 		memset((char*)&serv_addr, 0, sizeof(serv_addr));
@@ -534,12 +608,8 @@ int main(int argc, char* argv[]) {
 		serv_addr.sin_port = htons(5900);
 
 		struct timeval timeout;
-		timeout.tv_sec = 10; // 10 seconds timeout
+		timeout.tv_sec = 10; // 10 seconds timeout read/write
 		timeout.tv_usec = 0;
-
-	    // Set the socket connect timeout to 5 seconds
-	    uint32_t userTimeout = 5000;
-	    socklen_t userTimeoutLen = sizeof(userTimeout);
 
 		// Set receive timeout
 		if (setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout)) < 0) {
@@ -555,19 +625,59 @@ int main(int argc, char* argv[]) {
 			continue;
 		}
 
-		// Set connection timeout
-		if (setsockopt(sockfd, IPPROTO_TCP, TCP_USER_TIMEOUT, &userTimeout, userTimeoutLen) < 0) { //TCP_USER_TIMEOUT
-			perror("Set send timeout failed");
-			close(sockfd);
-			continue;
-		}
-
-		// Connect to the VNC server
-		if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0) {
+	    result = connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr));
+	    if (result < 0 && errno != EINPROGRESS) {
 			perror("Error connecting to server");
 			usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	        close(sockfd);
 			continue;
-		}
+	    }
+
+	    // Initialize file descriptor set
+	    FD_ZERO(&write_fds);
+	    FD_SET(sockfd, &write_fds);
+
+	    // Set timeout value
+	    timeout.tv_sec = 5;
+	    timeout.tv_usec = 0;
+
+	    // Wait for the socket to be writable (connection established)
+	    result = select(sockfd + 1, NULL, &write_fds, NULL, &timeout);
+	    if (result < 0) {
+	        perror("select failed");
+	        close(sockfd);
+			usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	        continue;
+	    } else if (result == 0) {
+	        printf("Connection timed out\n");
+	        close(sockfd);
+			usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	        continue;
+	    } else {
+	        // Check if the connection was successful
+	        if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len) < 0) {
+	            perror("getsockopt");
+	            close(sockfd);
+				usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	            continue;
+	        }
+	        if (so_error == 0) {
+	        	printf("Connected to the server: %s\n", inet_ntoa(serv_addr.sin_addr));
+	        } else {
+	            printf("Connection failed: %s\n", strerror(so_error));
+				usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	            close(sockfd);
+	            continue;
+	        }
+	    }
+
+	    // Reset socket to blocking mode
+	    if (fcntl(sockfd, F_SETFL, flags) < 0) {
+	        perror("fcntl F_SETFL");
+			usleep(200000); // Sleep for 200 milliseconds (200,000 microseconds)
+	        close(sockfd);
+	        continue;
+	    }
 
 		if (sockfd != NULL)
 		{
@@ -579,30 +689,88 @@ int main(int argc, char* argv[]) {
 		char serverInitMsg[12];
 		int bytesReceived = recv(sockfd, serverInitMsg, sizeof(serverInitMsg), MSG_WAITALL);
 		if (bytesReceived < 0) {
-			std::cerr << "Error receiving server initialization message" << std::endl;
-			close(sockfd);
-			continue;
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Receive timeout occurred" << std::endl;
+		    } else {
+		        std::cerr << "Error receiving server initialization message: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
+		} else if (bytesReceived == 0) {
+		    std::cerr << "Connection closed by peer" << std::endl;
+		    close(sockfd);
+		    continue;
 		}
-		// Send client protocol version message
-		if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
-			std::cerr << "Error sending client initialization message" << std::endl;
-			close(sockfd);
-			continue;
-		}
+
+	    // Send client protocol version message with timeout handling
+	    if (send(sockfd, PROTOCOL_VERSION, strlen(PROTOCOL_VERSION), 0) < 0) {
+	        if (errno == EWOULDBLOCK || errno == EAGAIN) {
+	            std::cerr << "Send timeout occurred" << std::endl;
+	        } else {
+	            std::cerr << "Error sending client initialization message: " << strerror(errno) << std::endl;
+	        }
+	        close(sockfd);
+	        continue;
+	    }
 		// Security handshake
 		char securityHandshake[4];
-		recv(sockfd, securityHandshake, sizeof(securityHandshake), 0);
-		printf("%s\n", securityHandshake);
-		send(sockfd, "\x01", 1, 0); // ClientInit
+		ssize_t bytesReceivedSecurity = recv(sockfd, securityHandshake, sizeof(securityHandshake), 0);
+		if (bytesReceivedSecurity < 0) {
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Receive timeout occurred" << std::endl;
+		    } else {
+		        std::cerr << "Error reading security handshake: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
+		} else if (bytesReceivedSecurity == 0) {
+		    std::cerr << "Connection closed by peer" << std::endl;
+		    close(sockfd);
+		    continue;
+		}
+
+		if (send(sockfd, "\x01", 1, 0) < 0) {
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Send timeout occurred" << std::endl;
+		    } else {
+		        std::cerr << "Error sending client init message: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
+		}
 
 		// Read framebuffer width and height
 		char framebufferWidth[2];
 		char framebufferHeight[2];
 
-		if (!recv(sockfd, framebufferWidth, 2, 0) || !recv(sockfd, framebufferHeight, 2, 0)) {
-			fprintf(stderr, "Error reading framebuffer dimensions\n");
-			close(sockfd);
-			continue;
+		ssize_t bytesReceivedFrameBuffer = recv(sockfd, framebufferWidth, sizeof(framebufferWidth), 0);
+		if (bytesReceivedFrameBuffer < 0) {
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Receive timeout occurred while reading framebuffer width" << std::endl;
+		    } else {
+		        std::cerr << "Error reading framebuffer width: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
+		} else if (bytesReceivedFrameBuffer == 0) {
+		    std::cerr << "Connection closed by peer while reading framebuffer width" << std::endl;
+		    close(sockfd);
+		    continue;
+		}
+
+		bytesReceivedFrameBuffer = recv(sockfd, framebufferHeight, sizeof(framebufferHeight), 0);
+		if (bytesReceivedFrameBuffer < 0) {
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Receive timeout occurred while reading framebuffer height" << std::endl;
+		    } else {
+		        std::cerr << "Error reading framebuffer height: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
+		} else if (bytesReceivedFrameBuffer == 0) {
+		    std::cerr << "Connection closed by peer while reading framebuffer height" << std::endl;
+		    close(sockfd);
+		    continue;
 		}
 
 		// Read pixel format and name length
@@ -621,17 +789,25 @@ int main(int argc, char* argv[]) {
 		// Read server name
 		char name[32];
 		if (!recv(sockfd, name, nameLengthInt, MSG_WAITALL)) {
-			fprintf(stderr, "Error reading server name\n");
-			close(sockfd);
-			continue;
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Receive timeout occurred while reading server name" << std::endl;
+		    } else {
+		        std::cerr << "Error reading server name: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
 		}
 
 		// Send encoding update requests
 		if (send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0) < 0 ||
-			send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-			std::cerr << "Error sending framebuffer update request" << std::endl;
-			close(sockfd);
-			continue;
+		    send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
+		    if (errno == EWOULDBLOCK || errno == EAGAIN) {
+		        std::cerr << "Send timeout occurred while sending framebuffer update request" << std::endl;
+		    } else {
+		        std::cerr << "Error sending framebuffer update request: " << strerror(errno) << std::endl;
+		    }
+		    close(sockfd);
+		    continue;
 		}
 		int framebufferWidthInt = 0;
 		int framebufferHeightInt = 0;
@@ -676,12 +852,18 @@ int main(int argc, char* argv[]) {
 				close(sockfd);
 				break;
 			}
-			// Send encoding update request
+
+		   // Send framebuffer update request with timeout handling
 			if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-				std::cerr << "error sending framebuffer update request" << std::endl;
+				if (errno == EWOULDBLOCK || errno == EAGAIN) {
+					std::cerr << "Send timeout occurred while sending framebuffer update request" << std::endl;
+				} else {
+					std::cerr << "Error sending framebuffer update request: " << strerror(errno) << std::endl;
+				}
 				close(sockfd);
 				break;
 			}
+
 
 			// Calculate elapsed time
 			time_t currentTime = time(NULL);
@@ -731,6 +913,7 @@ int main(int argc, char* argv[]) {
 	eglDestroySurface(eglDisplay, eglSurface);
 	eglDestroyContext(eglDisplay, eglContext);
 	eglTerminate(eglDisplay);
+	execute_final_commands();
 
 	return EXIT_SUCCESS;
 }
