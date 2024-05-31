@@ -29,6 +29,9 @@
 #include <netinet/tcp.h>
 #include <fcntl.h>
 #include <errno.h>
+#include <sys/sysctl.h>
+#include <sys/param.h>
+#include <netinet/tcp_var.h>
 
 
 #ifndef TCP_USER_TIMEOUT
@@ -563,6 +566,23 @@ int main(int argc, char* argv[]) {
 			close(sockfd);
 			continue;
 		}
+
+		int mib[4];
+		int ival = 0;
+
+		mib[0] = CTL_NET;
+		mib[1] = AF_INET;
+		mib[2] = IPPROTO_TCP;
+		mib[3] = TCPCTL_KEEPCNT;
+		ival = 3;
+		sysctl(mib, 4, NULL, NULL, &ival, sizeof(ival));
+
+		mib[0] = CTL_NET;
+		mib[1] = AF_INET;
+		mib[2] = IPPROTO_TCP;
+		mib[3] = TCPCTL_KEEPINTVL;
+		ival = 2;
+		sysctl(mib, 4, NULL, NULL, &ival, sizeof(ival));
 
 	    // Enable TCP keepalive
 	    if (setsockopt(sockfd, SOL_SOCKET, SO_KEEPALIVE, &keepalive, sizeof(keepalive)) < 0) {
