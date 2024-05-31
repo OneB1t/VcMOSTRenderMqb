@@ -37,7 +37,15 @@ How to make it run:
    - port 5900
    - no password
    - scaling (30-50%) this depends on your phone resolution -> lower value means faster streaming
-5) MIB2 SSH: run export IPL_CONFIG_DIR=/etc/eso/production ./fs/sda0/opengl-render-qnx
+5) MIB2 SSH: run
+ ```
+         export IPL_CONFIG_DIR=/etc/eso/production
+         ./fs/sda0/opengl-render-qnx
+ ```
+ in case that your phone received some random non-default IP other than 10.173.189.62 address you can specify the address as argument for opengl-render-qnx binary
+```
+          ./fs/sda0/opengl-render-qnx 10.10.10.2
+ ```
 7) VC: switch to navigation map and it should now show phone image
 
 When you want to get rid if this just restart your MIB2 device and everything is back to stock.
@@ -50,6 +58,16 @@ For autostartup (this is for advanced users only now please be really careful th
     if [ -f /navigation/opengl-render-qnx ]; then
         chmod 0777 /navigation/opengl-render-qnx
         /navigation/opengl-render-qnx &
+    else
+        echo "File /navigation/opengl-render-qnx does not exist."
+    fi
+```
+
+In case that custom IP is required please modify like this where 10.10.10.10 is IP of phone/vnc server device:
+ ```  
+    if [ -f /navigation/opengl-render-qnx ]; then
+        chmod 0777 /navigation/opengl-render-qnx
+        /navigation/opengl-render-qnx 10.10.10.10 &
     else
         echo "File /navigation/opengl-render-qnx does not exist."
     fi
