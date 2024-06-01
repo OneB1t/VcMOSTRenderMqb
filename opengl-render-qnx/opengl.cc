@@ -431,8 +431,8 @@ void Init() {
 int main(int argc, char* argv[]) {
 
 	printf("QNX MOST render 0.0.5 \n");
-	printf("Waiting 15 sec for networking to start up \n");
-	usleep(15000000);
+	printf("Waiting 45 sec for navigation to start up until then we cannot control display windows \n");
+	usleep(45000000);
 	printf("Loading libdisplayinit.so \n");
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {
