@@ -60,10 +60,10 @@ const char* fragmentShaderSource =
 "}\n";
 
 GLfloat landscapeVertices[] = {
-   -0.8f,  0.7, 0.0f,  // Top Left
-	0.8f,  0.7f, 0.0f,  // Top Right
-	0.8f, -0.67f, 0.0f,  // Bottom Right
-   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
+   -0.8f,  0.85, 0.0f,  // Top Left
+	0.75f,  0.85f, 0.0f,  // Top Right
+	0.75f, -0.6f, 0.0f,  // Bottom Right
+   -0.8f, -0.6f, 0.0f   // Bottom Leftvi
 };
 GLfloat portraitVertices[] = {
    -0.3f,  0.7, 0.0f,  // Top Left
@@ -77,8 +77,8 @@ GLfloat portraitVertices[] = {
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
 	0.0f, 0.0f,  // Bottom Left
-	0.9f, 0.00f,  // Bottom Right
-	0.9f, 1.0f,  // Top Right
+	0.95f, 0.00f,  // Bottom Right
+	0.95f, 1.0f,  // Top Right
 	0.0f, 1.0f   // Top Left
 };
 
@@ -430,9 +430,9 @@ void Init() {
 
 int main(int argc, char* argv[]) {
 
-	printf("QNX MOST render 0.0.5");
+	printf("QNX MOST render 0.0.5 \n");
 
-	printf("Loading libdisplayinit.so");
+	printf("Loading libdisplayinit.so \n");
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {
 		fprintf(stderr, "Error using libdisplayinit.so: %s\n", dlerror());
@@ -447,7 +447,7 @@ int main(int argc, char* argv[]) {
 		return 1; // Exit with error
 	}
 
-	printf("Calling method display_init from libdisplayinit.so");
+	printf("Calling method display_init from libdisplayinit.so \n");
 	// Call the function
 	display_init(0, 0); // DONE
 
@@ -457,7 +457,7 @@ int main(int argc, char* argv[]) {
 		return 1; // Exit with error
 	}
 
-	printf("OpenGL ES2.0 initialization started");
+	printf("OpenGL ES2.0 initialization started \n");
 	eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY); // DONE
 	eglInitialize(eglDisplay, 0, 0); // DONE
 
@@ -506,7 +506,7 @@ int main(int argc, char* argv[]) {
 		dlclose(func_handle_display_create_window); // Close the handle before returning
 		return 1; // Exit with error
 	}
-	printf("libdisplayinit.so: display_create_window");
+	printf("libdisplayinit.so: display_create_window \n");
 	display_create_window(eglDisplay, configs[0], 800, 480, 3, &windowEgl, &kdWindow);
 
 
@@ -515,7 +515,7 @@ int main(int argc, char* argv[]) {
 		fprintf(stderr, "Error: %s\n", dlerror());
 		return 1; // Exit with error
 	}
-	printf("OpenGLES: eglCreateWindowSurface");
+	printf("OpenGLES: eglCreateWindowSurface \n");
 	eglSurface = eglCreateWindowSurface(eglDisplay, configs[0], windowEgl, 0);
 	if (eglSurface == EGL_NO_SURFACE) {
 		checkErrorEGL("eglCreateWindowSurface");
@@ -528,7 +528,7 @@ int main(int argc, char* argv[]) {
 			EGL_CONTEXT_CLIENT_VERSION, 2,
 			EGL_NONE
 	};
-	printf("OpenGLES: eglCreateContext");
+	printf("OpenGLES: eglCreateContext \n");
 	eglContext = eglCreateContext(eglDisplay, configs[0], EGL_NO_CONTEXT, context_attribs);
 	checkErrorEGL("eglCreateContext");
 	if (eglContext == EGL_NO_CONTEXT) {
@@ -547,7 +547,7 @@ int main(int argc, char* argv[]) {
 	Init();
 	while (true)
 	{
-		printf("Main loop executed");
+		printf("Main loop executed \n");
 		execute_final_commands();
 		int sockfd;
 	    fd_set write_fds;
