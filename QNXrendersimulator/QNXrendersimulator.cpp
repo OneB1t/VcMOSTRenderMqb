@@ -65,10 +65,10 @@ GLfloat landscapeVertices[] = {
    -0.8f, -0.67f, 0.0f   // Bottom Leftvi
 };
 GLfloat portraitVertices[] = {
-   -0.3f,  0.7, 0.0f,  // Top Left
-    0.3f,  0.7f, 0.0f,  // Top Right
-    0.3f, -0.65f, 0.0f,  // Bottom Right
-   -0.3f, -0.65f, 0.0f   // Bottom Leftvi
+   -0.8f,  1.0f, 0.0f,  // Top Left
+    0.8f,  1.0f, 0.0f,  // Top Right
+    0.8f, -0.67f, 0.0f,  // Bottom Right
+   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
 };
 
 
@@ -84,9 +84,9 @@ GLfloat landscapeTexCoords[] = {
 // Texture coordinates
 GLfloat portraitTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
-    1.0f, 0.0f,  // Bottom Right
-    1.0f, 1.0f,  // Top Right
-    0.0f, 1.0f   // Top Left
+    0.63f, 0.0f,  // Bottom Right
+    0.63f, 0.2f,  // Top Right
+    0.0f, 0.2f   // Top Left
 };
 
 // Constants for VNC protocol

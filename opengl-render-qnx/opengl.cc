@@ -60,34 +60,34 @@ const char* fragmentShaderSource =
 "}\n";
 
 GLfloat landscapeVertices[] = {
-   -0.8f,  0.85, 0.0f,  // Top Left
-	0.75f,  0.85f, 0.0f,  // Top Right
-	0.75f, -0.6f, 0.0f,  // Bottom Right
-   -0.8f, -0.6f, 0.0f   // Bottom Leftvi
+   -0.8f,  0.7, 0.0f,  // Top Left
+    0.8f,  0.7f, 0.0f,  // Top Right
+    0.8f, -0.67f, 0.0f,  // Bottom Right
+   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
 };
 GLfloat portraitVertices[] = {
-   -0.3f,  0.7, 0.0f,  // Top Left
-	0.3f,  0.7f, 0.0f,  // Top Right
-	0.3f, -0.65f, 0.0f,  // Bottom Right
-   -0.3f, -0.65f, 0.0f   // Bottom Leftvi
+   -0.8f,  1.0f, 0.0f,  // Top Left
+    0.8f,  1.0f, 0.0f,  // Top Right
+    0.8f, -0.67f, 0.0f,  // Bottom Right
+   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
 };
 
 
 
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
-	0.0f, 0.0f,  // Bottom Left
-	0.95f, 0.00f,  // Bottom Right
-	0.95f, 1.0f,  // Top Right
-	0.0f, 1.0f   // Top Left
+    0.0f, 0.0f,  // Bottom Left
+    0.9f, 0.00f,  // Bottom Right
+    0.9f, 1.0f,  // Top Right
+    0.0f, 1.0f   // Top Left
 };
 
 // Texture coordinates
 GLfloat portraitTexCoords[] = {
-	0.0f, 0.0f,  // Bottom Left
-	1.0f, 0.0f,  // Bottom Right
-	1.0f, 1.0f,  // Top Right
-	0.0f, 1.0f   // Top Left
+    0.0f, 0.0f,  // Bottom Left
+    0.63f, 0.0f,  // Bottom Right
+    0.63f, 0.2f,  // Top Right
+    0.0f, 0.2f   // Top Left
 };
 
 // Constants for VNC protocol
@@ -431,8 +431,6 @@ void Init() {
 int main(int argc, char* argv[]) {
 
 	printf("QNX MOST render 0.0.5 \n");
-	printf("Waiting 45 sec for navigation to start up until then we cannot control display windows \n");
-	usleep(45000000);
 	printf("Loading libdisplayinit.so \n");
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {
