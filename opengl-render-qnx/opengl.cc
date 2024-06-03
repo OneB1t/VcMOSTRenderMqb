@@ -86,8 +86,8 @@ GLfloat landscapeTexCoords[] = {
 GLfloat portraitTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
     0.63f, 0.0f,  // Bottom Right
-    0.63f, 0.2f,  // Top Right
-    0.0f, 0.2f   // Top Left
+    0.63f, 0.3f,  // Top Right
+    0.0f, 0.3f   // Top Left
 };
 
 // Constants for VNC protocol
