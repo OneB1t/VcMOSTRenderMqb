@@ -946,7 +946,7 @@ int main(int argc, char* argv[]) {
 			if(switchToMap > 100)
 			{
 				switchToMap = 0;
-				execute_switch_command();
+				execute_initial_commands();
 			}
 			free(framebufferUpdate); // Free the dynamically allocated memory
 		}
