@@ -943,7 +943,7 @@ int main(int argc, char* argv[]) {
 			glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 			eglSwapBuffers(eglDisplay, eglSurface);
 			switchToMap++;
-			if(switchToMap > 100)
+			if(switchToMap > 25)
 			{
 				switchToMap = 0;
 				execute_initial_commands();
