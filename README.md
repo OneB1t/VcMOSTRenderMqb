@@ -160,13 +160,9 @@ normal_startup()
 Way to write custom data to Virtual cockpit for MQB platform
 Supported screens (as of now probably most screens which are able to receive MOST map will be supported):
 
-continental VDO
-
-> 3G0920798 - passat B8 / arteon
+continental VDO (navigation support required)
 > 
 > 3G0920791 - passat B8 / arteon
-> 
-> 3G0920794 - passat B8 GTE
 > 
 > 5NA920791 - tiguan
 > 
