@@ -1,0 +1,28 @@
+<Status>
+  <Init/>
+</Status>
+<Rsp id="105">
+  <Capabilities description="Dies ist der VW Standard Application Interface Server. API Level 5" service="VW SAI-Server HIGH" version="5.0" id="54VxWLx6PmYHTJYrtX7Gegb59pdSlRi0">
+    <Supports protocol="1.3" interface="true" authenticate="true" heartbeat="true" datTimeStamp="true"/>
+  </Capabilities>
+</Rsp>
+
+<Rsp id="106">
+  <Challenge nonce="OKc9q976ikTUHYnP5CKLWQ=="/>
+</Rsp>
+
+<Rsp id="3"/>
+
+<Rsp id="101"/>
+<Dat url="ambienceLight_profiles">
+  <Abs name="activeProfile" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile1_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile2_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile3_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile4_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile5_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile6_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile7_brightness" state="error" msg="EC_01, not existing"/>
+  <Abs name="profile8_brightness" state="error" msg="EC_01, not existing"/>
+</Dat>
+
