@@ -26,11 +26,13 @@
 
 //GLES setup
 GLuint programObject;
+GLuint programObjectTextRender;
 EGLDisplay eglDisplay;
 EGLConfig eglConfig;
 EGLSurface eglSurface;
 EGLContext eglContext;
 
+// VNC shaders
 // Vertex shader source
 const char* vertexShaderSource =
 "#version 100\n" // Specify ES 2.0 version
@@ -53,6 +55,24 @@ const char* fragmentShaderSource =
 "{\n"
 "    gl_FragColor = texture2D(texture, v_texCoord);\n"
 "}\n";
+
+// Text Rendering shaders
+const char* vertexShaderSourceText =
+"attribute vec2 position;    \n"
+"void main()                  \n"
+"{                            \n"
+"   gl_Position = vec4(position, 0.0, 1.0); \n"
+"   gl_PointSize = 4.0;      \n" // Point size
+"}                            \n";
+
+// Fragment shader source
+const char* fragmentShaderSourceText =
+"void main()               \n"
+"{                         \n"
+"  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
+"}                         \n";
+
+
 
 GLfloat landscapeVertices[] = {
    -0.8f,  0.7, 0.0f,  // Top Left
@@ -225,38 +245,71 @@ int32_t byteArrayToInt32(const char* byteArray) {
 
 // Initialize OpenGL ES
 void Init() {
-    // Load and compile shaders
-    GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-    glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-    glCompileShader(vertexShader);
+    // Load and compile VNC shaders
+    GLuint vertexShaderVncRender = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShaderVncRender, 1, &vertexShaderSource, NULL);
+    glCompileShader(vertexShaderVncRender);
 
     // Check for compile errors
     GLint vertexShaderCompileStatus;
-    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
+    glGetShaderiv(vertexShaderVncRender, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
     if (vertexShaderCompileStatus != GL_TRUE) {
         char infoLog[512];
-        glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+        glGetShaderInfoLog(vertexShaderVncRender, 512, NULL, infoLog);
         printf("Vertex shader compilation failed: %s\n", infoLog);
     }
 
-    GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-    glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-    glCompileShader(fragmentShader);
+    GLuint fragmentShaderVncRender = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShaderVncRender, 1, &fragmentShaderSource, NULL);
+    glCompileShader(fragmentShaderVncRender);
 
     // Check for compile errors
     GLint fragmentShaderCompileStatus;
-    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
+    glGetShaderiv(fragmentShaderVncRender, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
     if (fragmentShaderCompileStatus != GL_TRUE) {
         char infoLog[512];
-        glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+        glGetShaderInfoLog(fragmentShaderVncRender, 512, NULL, infoLog);
+        printf("Fragment shader compilation failed: %s\n", infoLog);
+    }
+
+    // Load and compile Text Render shaders
+    GLuint vertexShaderTextRender = glCreateShader(GL_VERTEX_SHADER);
+    glShaderSource(vertexShaderTextRender, 1, &vertexShaderSourceText, NULL);
+    glCompileShader(vertexShaderTextRender);
+
+    // Check for compile errors
+    GLint vertexShaderTextRenderCompileStatus;
+    glGetShaderiv(vertexShaderTextRender, GL_COMPILE_STATUS, &vertexShaderTextRenderCompileStatus);
+    if (vertexShaderTextRenderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(vertexShaderTextRender, 512, NULL, infoLog);
+        printf("Vertex shader compilation failed: %s\n", infoLog);
+    }
+
+    GLuint fragmentShaderTextRender = glCreateShader(GL_FRAGMENT_SHADER);
+    glShaderSource(fragmentShaderTextRender, 1, &fragmentShaderSourceText, NULL);
+    glCompileShader(fragmentShaderTextRender);
+
+    // Check for compile errors
+    GLint fragmentShaderCompileStatusTextRender;
+    glGetShaderiv(fragmentShaderTextRender, GL_COMPILE_STATUS, &fragmentShaderCompileStatusTextRender);
+    if (fragmentShaderCompileStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetShaderInfoLog(fragmentShaderTextRender, 512, NULL, infoLog);
         printf("Fragment shader compilation failed: %s\n", infoLog);
     }
 
     // Create program object
     programObject = glCreateProgram();
-    glAttachShader(programObject, vertexShader);
-    glAttachShader(programObject, fragmentShader);
+    
+    glAttachShader(programObject, vertexShaderVncRender);
+    glAttachShader(programObject, fragmentShaderVncRender);
     glLinkProgram(programObject);
+
+    programObjectTextRender = glCreateProgram();
+    glAttachShader(programObjectTextRender, vertexShaderTextRender);
+    glAttachShader(programObjectTextRender, fragmentShaderTextRender);
+    glLinkProgram(programObjectTextRender);
 
     // Check for linking errors
     GLint programLinkStatus;
@@ -264,6 +317,13 @@ void Init() {
     if (programLinkStatus != GL_TRUE) {
         char infoLog[512];
         glGetProgramInfoLog(programObject, 512, NULL, infoLog);
+        printf("Program linking failed: %s\n", infoLog);
+    }
+
+    glGetProgramiv(programObjectTextRender, GL_LINK_STATUS, &programLinkStatus);
+    if (programLinkStatus != GL_TRUE) {
+        char infoLog[512];
+        glGetProgramInfoLog(programObjectTextRender, 512, NULL, infoLog);
         printf("Program linking failed: %s\n", infoLog);
     }
 
@@ -655,6 +715,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             glUseProgram(programObject);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
 
+
             // Set vertex positions
             GLint positionAttribute = glGetAttribLocation(programObject, "position");
             if (framebufferWidthInt > finalHeight)
@@ -675,6 +736,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             finalHeight = 0;
             // Draw quad
             glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+            glUseProgram(programObjectTextRender);
+            char test[10]; // Adjust size accordingly
+            snprintf(test, sizeof(test), "%.2f FPS\n", fps);
+            print_string(-300, 200, test, 1, 1, 1, 200);
+
             eglSwapBuffers(eglDisplay, eglSurface);
             switchToMap++;
             if (switchToMap > 25)
