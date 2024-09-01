@@ -38,6 +38,13 @@
     #define TCP_USER_TIMEOUT 18  // how long for loss retry before timeout [ms]
 #endif
 
+//GLES setup
+GLuint programObject;
+EGLDisplay eglDisplay;
+EGLConfig eglConfig;
+EGLSurface eglSurface;
+EGLContext eglContext;
+
 // Vertex shader source
 const char* vertexShaderSource =
 "attribute vec2 position;    \n"
@@ -71,9 +78,6 @@ GLfloat portraitVertices[] = {
     0.8f, -0.67f, 0.0f,  // Bottom Right
    -0.8f, -0.67f, 0.0f   // Bottom Leftvi
 };
-
-
-
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
@@ -81,7 +85,6 @@ GLfloat landscapeTexCoords[] = {
     0.9f, 1.0f,  // Top Right
     0.0f, 1.0f   // Top Left
 };
-
 // Texture coordinates
 GLfloat portraitTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
@@ -92,27 +95,21 @@ GLfloat portraitTexCoords[] = {
 
 // Constants for VNC protocol
 const char* PROTOCOL_VERSION = "RFB 003.003\n"; // Client initialization message
-const char FRAMEBUFFER_UPDATE_REQUEST[] = {
-	3,     // Message Type: FramebufferUpdateRequest
-	0,
-	0,0,
-	0,0,
-	255,255,
-	255,255
-};
-const char CLIENT_INIT[] = {	1, };
+const char FRAMEBUFFER_UPDATE_REQUEST[] = {3,0,0,0,0,0,255,255,255,255};
+const char CLIENT_INIT[] = {1};
+const char ZLIB_ENCODING[] = {2,0,0,2,0,0,0,6,0,0,0,0};
 
-const char ZLIB_ENCODING[] = {	2,0,0,2,0,0,0,6,0,0,0,0}; // support RAW and ZLIB
-
-GLuint programObject;
-EGLDisplay eglDisplay;
-EGLConfig eglConfig;
-EGLSurface eglSurface;
-EGLContext eglContext;
+// SETUP SECTION
 int windowWidth = 800;
 int windowHeight = 480;
 
+const char* VNC_SERVER_IP_ADDRESS = "192.168.1.190";
+const int VNC_SERVER_PORT = 5900;
 
+const char* EXLAP_SERVER_IP_ADDRESS = "127.0.0.1";
+const int EXLAP_SERVER_PORT = 25010;
+
+// QNX SPECIFIC SECTION
 static EGLenum checkErrorEGL(const char* msg)
 {
 	static const char* errmsg[] =
@@ -138,19 +135,12 @@ static EGLenum checkErrorEGL(const char* msg)
 	return error;
 }
 
-int16_t byteArrayToInt16(const char* byteArray) {
-	return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
-}
-
-int32_t byteArrayToInt32(const char* byteArray) {
-	return ((int32_t)(byteArray[0] & 0xFF) << 24) | ((int32_t)(byteArray[1] & 0xFF) << 16) | ((int32_t)(byteArray[2] & 0xFF) << 8) | (byteArray[3] & 0xFF);
-}
-
 struct Command {
 	const char* command;
 	const char* error_message;
 };
 
+// CODE FROM HERE IS THE SAME FOR WINDOWS OR QNX
 void execute_initial_commands() {
 	struct Command commands[] = {
 		{"/eso/bin/apps/dmdt dc 99 3", "Create new display table with context 3 failed with error"},
@@ -171,27 +161,6 @@ void execute_initial_commands() {
 	}
 }
 
-void execute_switch_command() {
-	struct Command commands[] = {
-		{"/eso/bin/apps/dmdt sc 4 99", "Set display 4 (VC) to display table 99 failed with error"}
-	};
-	size_t num_commands = sizeof(commands) / sizeof(commands[0]);
-
-	for (size_t i = 0; i < num_commands; ++i) {
-		const char* command = commands[i].command;
-		const char* error_message = commands[i].error_message;
-		printf("Executing '%s'\n", command);
-
-		// Execute the command
-		int ret = system(command);
-		if (ret != 0) {
-			fprintf(stderr, "%s: %d\n", error_message, ret);
-		}
-	}
-}
-
-
-
 void execute_final_commands() {
 	struct Command commands[] = {
 		{"/eso/bin/apps/dmdt sc 4 70", "Set display 4 (VC) to display table 70 failed with error"}
@@ -211,6 +180,61 @@ void execute_final_commands() {
 	}
 }
 
+int16_t byteArrayToInt16(const char* byteArray) {
+	return ((int16_t)(byteArray[0] & 0xFF) << 8) | (byteArray[1] & 0xFF);
+}
+
+int32_t byteArrayToInt32(const char* byteArray) {
+	return ((int32_t)(byteArray[0] & 0xFF) << 24) | ((int32_t)(byteArray[1] & 0xFF) << 16) | ((int32_t)(byteArray[2] & 0xFF) << 8) | (byteArray[3] & 0xFF);
+}
+
+// Initialize OpenGL ES
+void Init() {
+	// Load and compile shaders
+	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
+	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
+	glCompileShader(vertexShader);
+
+	// Check for compile errors
+	GLint vertexShaderCompileStatus;
+	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
+	if (vertexShaderCompileStatus != GL_TRUE) {
+		char infoLog[512];
+		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
+		printf("Vertex shader compilation failed: %s\n", infoLog);
+	}
+
+	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
+	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
+	glCompileShader(fragmentShader);
+
+	// Check for compile errors
+	GLint fragmentShaderCompileStatus;
+	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
+	if (fragmentShaderCompileStatus != GL_TRUE) {
+		char infoLog[512];
+		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
+		printf("Fragment shader compilation failed: %s\n", infoLog);
+	}
+
+	// Create program object
+	programObject = glCreateProgram();
+	glAttachShader(programObject, vertexShader);
+	glAttachShader(programObject, fragmentShader);
+	glLinkProgram(programObject);
+
+	// Check for linking errors
+	GLint programLinkStatus;
+	glGetProgramiv(programObject, GL_LINK_STATUS, &programLinkStatus);
+	if (programLinkStatus != GL_TRUE) {
+		char infoLog[512];
+		glGetProgramInfoLog(programObject, 512, NULL, infoLog);
+		printf("Program linking failed: %s\n", infoLog);
+	}
+
+	// Set clear color to black
+	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+}
 
 char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm, int* finalHeight)
 {
@@ -398,58 +422,10 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
 	print_string(-stb_easy_font_width(text) * (size / 200), y, text, r, g, b, size);
 }
 
-// Initialize OpenGL ES
-void Init() {
-	// Load and compile shaders
-	GLuint vertexShader = glCreateShader(GL_VERTEX_SHADER);
-	glShaderSource(vertexShader, 1, &vertexShaderSource, NULL);
-	glCompileShader(vertexShader);
-
-	// Check for compile errors
-	GLint vertexShaderCompileStatus;
-	glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &vertexShaderCompileStatus);
-	if (vertexShaderCompileStatus != GL_TRUE) {
-		char infoLog[512];
-		glGetShaderInfoLog(vertexShader, 512, NULL, infoLog);
-		printf("Vertex shader compilation failed: %s\n", infoLog);
-	}
-
-	GLuint fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
-	glShaderSource(fragmentShader, 1, &fragmentShaderSource, NULL);
-	glCompileShader(fragmentShader);
-
-	// Check for compile errors
-	GLint fragmentShaderCompileStatus;
-	glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &fragmentShaderCompileStatus);
-	if (fragmentShaderCompileStatus != GL_TRUE) {
-		char infoLog[512];
-		glGetShaderInfoLog(fragmentShader, 512, NULL, infoLog);
-		printf("Fragment shader compilation failed: %s\n", infoLog);
-	}
-
-	// Create program object
-	programObject = glCreateProgram();
-	glAttachShader(programObject, vertexShader);
-	glAttachShader(programObject, fragmentShader);
-	glLinkProgram(programObject);
-
-	// Check for linking errors
-	GLint programLinkStatus;
-	glGetProgramiv(programObject, GL_LINK_STATUS, &programLinkStatus);
-	if (programLinkStatus != GL_TRUE) {
-		char infoLog[512];
-		glGetProgramInfoLog(programObject, 512, NULL, infoLog);
-		printf("Program linking failed: %s\n", infoLog);
-	}
-
-	// Set clear color to black
-	glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
-}
-
-
+// MAIN SECTION IS DIFFERENT ON QNX
 int main(int argc, char* argv[]) {
 
-	printf("QNX MOST render 0.0.5 \n");
+	printf("QNX MOST VNC render 0.0.7 \n");
 	printf("Loading libdisplayinit.so \n");
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {
@@ -525,7 +501,7 @@ int main(int argc, char* argv[]) {
 		return 1; // Exit with error
 	}
 	printf("libdisplayinit.so: display_create_window \n");
-	display_create_window(eglDisplay, configs[0], 800, 480, 3, &windowEgl, &kdWindow);
+	display_create_window(eglDisplay, configs[0], windowWidth, windowHeight, 3, &windowEgl, &kdWindow);
 
 
 	// Close the handle
@@ -560,7 +536,7 @@ int main(int argc, char* argv[]) {
 		return EXIT_FAILURE;
 	}
 
-
+    // THIS SECTIONS IS THE SAME ON QNX AND WINDOWS
 	// Initialize OpenGL ES
 	Init();
 	while (true)
@@ -641,9 +617,9 @@ int main(int argc, char* argv[]) {
 		}
 		else {
 			// Fallback to default IP address if no argument is provided
-			serv_addr.sin_addr.s_addr = inet_addr("10.173.189.62");
+			serv_addr.sin_addr.s_addr = inet_addr(VNC_SERVER_IP_ADDRESS);
 		}
-		serv_addr.sin_port = htons(5900);
+		serv_addr.sin_port = htons(VNC_SERVER_PORT);
 
 		struct timeval timeout;
 		timeout.tv_sec = 10; // 10 seconds timeout read/write

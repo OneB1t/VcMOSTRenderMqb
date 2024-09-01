@@ -133,11 +133,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="miniz.h" />
-    <ClInclude Include="QNXrendersimulator.h" />
+    <ClInclude Include="opengl.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="miniz.c" />
-    <ClCompile Include="QNXrendersimulator.cpp" />
+    <ClCompile Include="opengl.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ResourceCompile Include="QNXrendersimulator.rc" />
