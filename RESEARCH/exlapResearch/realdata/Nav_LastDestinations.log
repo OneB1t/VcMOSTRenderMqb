@@ -1,0 +1,29 @@
+<Status>
+  <Init/>
+</Status>
+<Rsp id="105">
+  <Capabilities description="Dies ist der VW Standard Application Interface Server. API Level 5" service="VW SAI-Server HIGH" version="5.0" id="54VxWLx6PmYHTJYrtX7Gegb59pdSlRi0">
+    <Supports protocol="1.3" interface="true" authenticate="true" heartbeat="true" datTimeStamp="true"/>
+  </Capabilities>
+</Rsp>
+
+<Rsp id="106">
+  <Challenge nonce="KkxdhGl9/Cs//f4LtKAeBQ=="/>
+</Rsp>
+
+<Rsp id="3"/>
+
+<Rsp id="101"/>
+<Dat url="Nav_LastDestinations">
+  <List name="Destinations">
+    <Elem>
+      <Abs name="id" val="3"/>
+      <Txt name="Descriptor" val="44°47&apos;01.8&quot;S, 014°01&apos;38.0&quot;V"/>
+    </Elem>
+    <Elem>
+      <Abs name="id" val="1"/>
+      <Txt name="Descriptor" val="Horní Jelení, Centrum"/>
+    </Elem>
+  </List>
+</Dat>
+

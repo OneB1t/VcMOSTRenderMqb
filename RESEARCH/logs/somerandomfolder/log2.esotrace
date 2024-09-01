@@ -1,0 +1,7 @@
+[DSIAndroidAuto2Impl] onJob_updatePlaybackState : playbackInfo=[status=PAUSED, shuffleMode=OFF, repeatMode=OFF, playbackApp='Spotify'], valid=1
+[DSIAndroidAuto2Impl] onJob_updateNowPlayingData : title='FAST LAND', artist='Moderat', album='MORE D4TA', duration=219000, valid=1
+[DSIAndroidAuto2Impl] onJob_updateCoverArtUrl : url='/tmp/gal_albumArt_1.png'
+[DSIAndroidAuto2Impl] onJob_updateNavigationNextTurnEvent : road='Cicha', turnSide=UNSPECIFIED, event=DEPART, turnAngle=0, turnNumber=0, valid=1
+[DSIAndroidAuto2Impl] onJob_updateNavigationNextTurnDistance : distanceMeters=0, timeSeconds=0, valid=1
+
+[DSIAndroidAuto2Impl] onJob_updateNavigationNextTurnEvent : road='NANANA', turnSide=UNSPECIFIED, event=DEPART, turnAngle=0, turnNumber=0, valid=1

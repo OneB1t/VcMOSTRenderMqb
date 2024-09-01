@@ -1,0 +1,87 @@
+<Status>
+  <Init/>
+</Status>
+<Rsp id="105">
+  <Capabilities description="Dies ist der VW Standard Application Interface Server. API Level 5" service="VW SAI-Server HIGH" version="5.0" id="54VxWLx6PmYHTJYrtX7Gegb59pdSlRi0">
+    <Supports protocol="1.3" interface="true" authenticate="true" heartbeat="true" datTimeStamp="true"/>
+  </Capabilities>
+</Rsp>
+
+<Rsp id="106">
+  <Challenge nonce="F0ZTnWMfWbnUXw0S7kGKxw=="/>
+</Rsp>
+
+<Rsp id="3"/>
+
+<Rsp id="101"/>
+<Dat url="Media_AvailableSources">
+  <List name="Sources">
+    <Elem>
+      <Abs name="SourceId" state="nodata"/>
+      <Act name="DB_Sync" val="false"/>
+      <Enm name="State" val="Error"/>
+      <Enm name="Source" val="SDCard"/>
+      <Obj name="Capabilities">
+        <Act name="CoverArt" state="nodata"/>
+        <Act name="DB_Browsing" state="nodata"/>
+        <Act name="DetailInfo" state="nodata"/>
+        <Act name="ElapsedTime" state="nodata"/>
+        <Act name="FastBackward" state="nodata"/>
+        <Act name="FastForward" state="nodata"/>
+        <Act name="Pause" state="nodata"/>
+        <Act name="Play" state="nodata"/>
+        <Act name="PlaybackModes" state="nodata"/>
+        <Act name="TotalTrackTime" state="nodata"/>
+        <Act name="PMLTMode" state="nodata"/>
+        <Act name="RawBrowseMode" state="nodata"/>
+        <Act name="SetTimePos" state="nodata"/>
+        <Act name="SkipBackward" state="nodata"/>
+        <Act name="SkipForward" state="nodata"/>
+      </Obj>
+      <Txt name="SourceName" state="nodata"/>
+    </Elem>
+    <Elem>
+      <Abs name="SourceId" state="nodata"/>
+      <Act name="DB_Sync" val="false"/>
+      <Enm name="State" val="Ready"/>
+      <Enm name="Source" val="AUX"/>
+      <Obj name="Capabilities">
+        <Act name="CoverArt" val="false"/>
+        <Act name="DB_Browsing" val="false"/>
+        <Act name="DetailInfo" state="nodata"/>
+        <Act name="ElapsedTime" state="nodata"/>
+        <Act name="FastBackward" state="nodata"/>
+        <Act name="FastForward" state="nodata"/>
+        <Act name="Pause" state="nodata"/>
+        <Act name="Play" state="nodata"/>
+        <Act name="PlaybackModes" val="false"/>
+        <Act name="TotalTrackTime" state="nodata"/>
+        <Act name="PMLTMode" state="nodata"/>
+        <Act name="RawBrowseMode" val="false"/>
+        <Act name="SetTimePos" state="nodata"/>
+        <Act name="SkipBackward" state="nodata"/>
+        <Act name="SkipForward" state="nodata"/>
+      </Obj>
+      <Txt name="SourceName" state="nodata"/>
+    </Elem>
+    <Elem>
+      <Abs name="SourceId" state="nodata"/>
+      <Act name="DB_Sync" val="true"/>
+      <Enm name="State" val="Ready"/>
+      <Enm name="Source" val="HDD"/>
+      <Obj name="Capabilities">
+        <Act name="CoverArt" val="true"/>
+        <Act name="DB_Browsing" val="true"/>
+        <Act name="DetailInfo" state="nodata"/>
+        <Act name="ElapsedTime" state="nodata"/>
+        <Act name="FastBackward" state="nodata"/>
+        <Act name="FastForward" state="nodata"/>
+        <Act name="Pause" state="nodata"/>
+        <Act name="Play" state="nodata"/>
+        <Act name="PlaybackModes" val="true"/>
+        <Act name="TotalTrackTime" state="nodata"/>
+        <Act name="PMLTMode" state="nodata"/>
+        <Act name="RawBrowseMode" val="false"/>
+        <Act name="SetTimePos" state="nodata"/>
+        <Act name="SkipBackward" state="nodata"/>
+        <Ac

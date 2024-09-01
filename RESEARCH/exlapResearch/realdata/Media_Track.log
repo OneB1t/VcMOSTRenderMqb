@@ -1,0 +1,25 @@
+<Status>
+  <Init/>
+</Status>
+<Rsp id="105">
+  <Capabilities description="Dies ist der VW Standard Application Interface Server. API Level 5" service="VW SAI-Server HIGH" version="5.0" id="54VxWLx6PmYHTJYrtX7Gegb59pdSlRi0">
+    <Supports protocol="1.3" interface="true" authenticate="true" heartbeat="true" datTimeStamp="true"/>
+  </Capabilities>
+</Rsp>
+
+<Rsp id="106">
+  <Challenge nonce="YT7SWeD/zxPBl47IfzXxOQ=="/>
+</Rsp>
+
+<Rsp id="3"/>
+
+<Rsp id="101"/>
+<Dat url="Media_Track">
+  <Abs name="Length" val="149013"/>
+  <Abs name="Number" state="nodata"/>
+  <Txt name="Cover" state="nodata"/>
+  <Txt name="Title" val="Ain&apos;t No Mountain High Enough"/>
+  <Txt name="Artist" val="Marvin Gaye and Tammi Terrell"/>
+  <Txt name="Album" val="Guardians of the Galaxy: Awesome Mix Vol. 1"/>
+</Dat>
+

@@ -1,4 +1,0 @@
-﻿  QNXrendersimulator.cpp
-C:\Users\OneB1t\IdeaProjects\VcMOSTRenderMqb\QNXrendersimulator\QNXrendersimulator.cpp(95,15): warning C4244: argument: time_t se převádí na unsigned int; může dojít ke ztrátě dat.
-C:\Users\OneB1t\IdeaProjects\VcMOSTRenderMqb\QNXrendersimulator\QNXrendersimulator.cpp(164,15): warning C4244: return: WPARAM se převádí na int; může dojít ke ztrátě dat.
-  QNXrendersimulator.vcxproj -> C:\Users\OneB1t\IdeaProjects\VcMOSTRenderMqb\QNXrendersimulator\x64\Debug\QNXrendersimulator.exe
