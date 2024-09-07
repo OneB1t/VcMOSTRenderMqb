@@ -74,14 +74,15 @@ const char* vertexShaderSourceText =
 "void main()                  \n"
 "{                            \n"
 "   gl_Position = vec4(position, 0.0, 1.0); \n"
-"   gl_PointSize = 4.0;      \n" // Point size
+"   gl_PointSize = 1.0;      \n" // Point size
 "}                            \n";
 
 // Fragment shader source
 const char* fragmentShaderSourceText =
+"precision mediump float;\n"
 "void main()               \n"
 "{                         \n"
-"  gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0); \n" // Color
+"  gl_FragColor = vec4(1.0, 0.0, 0.0, 1.0); \n" // Color
 "}                         \n";
 
 GLfloat landscapeVertices[] = {
@@ -98,10 +99,10 @@ GLfloat portraitVertices[] = {
 };
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
-    0.0f, 0.0f,  // Bottom Left
-    0.0f, 0.07f,  // Bottom Left
-    0.90f, 0.07f,  // Bottom Right
-    0.90f, 1.0f,  // Top Right
+	0.0f, 0.07f,  // Bottom Left
+	0.90f, 0.07f,  // Bottom Right
+	0.90f, 1.0f,  // Top Right
+	0.0f, 1.0f   // Top Left
 };
 // Texture coordinates
 GLfloat portraitTexCoords[] = {
@@ -121,7 +122,7 @@ const char ZLIB_ENCODING[] = {2,0,0,2,0,0,0,6,0,0,0,0};
 int windowWidth = 800;
 int windowHeight = 480;
 
-const char* VNC_SERVER_IP_ADDRESS = "192.168.1.190";
+const char* VNC_SERVER_IP_ADDRESS = "10.173.189.62";
 const int VNC_SERVER_PORT = 5900;
 
 const char* EXLAP_SERVER_IP_ADDRESS = "127.0.0.1";
@@ -456,7 +457,7 @@ char* parseFramebufferUpdate(int socket_fd, int* frameBufferWidth, int* frameBuf
 	return finalFrameBuffer;
 }
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
-	char inputBuffer[2000] = { 0 }; // ~500 chars
+	char inputBuffer[2000] = { 0 }; // ~20s chars
 	GLfloat triangleBuffer[2000] = { 0 };
 	int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
 
@@ -485,7 +486,7 @@ void print_string(float x, float y, const char* text, float r, float g, float b,
 
 	}
 
-	glUseProgram(programObject);
+	glUseProgram(programObjectTextRender);
 	GLuint vbo;
 	glGenBuffers(1, &vbo);
 	glBindBuffer(GL_ARRAY_BUFFER, vbo);
@@ -1003,8 +1004,7 @@ int main(int argc, char* argv[]) {
 			// Draw quad
 			glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
-            glUseProgram(programObjectTextRender);
-            print_string(-333, 160, readPersistanceData("i:29229279:504").c_str(), 1, 1, 1, 150); // car speed
+            print_string(-333, 150, readPersistanceData("s:2001:101").c_str(), 1, 1, 1, 64); // persistance data
 
 			eglSwapBuffers(eglDisplay, eglSurface);
 			switchToMap++;
