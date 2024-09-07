@@ -99,9 +99,9 @@ GLfloat portraitVertices[] = {
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
     0.0f, 0.0f,  // Bottom Left
-    0.9f, 0.00f,  // Bottom Right
-    0.9f, 1.0f,  // Top Right
-    0.0f, 1.0f   // Top Left
+    0.0f, 0.07f,  // Bottom Left
+    0.90f, 0.07f,  // Bottom Right
+    0.90f, 1.0f,  // Top Right
 };
 // Texture coordinates
 GLfloat portraitTexCoords[] = {
@@ -196,6 +196,32 @@ void execute_final_commands() {
 			fprintf(stderr, "%s: %d\n", error_message, ret);
 		}
 	}
+}
+
+std::string readPersistanceData(const std::string& position) {
+    std::string command = "";
+#ifdef _WIN32
+    return "NC"; // not connected
+#else
+    command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc " + position;
+#endif
+
+    FILE* pipe = popen(command.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "Error: Failed to execute command." << std::endl;
+        return "0";
+    }
+
+    char buffer[128];
+    std::string result = "";
+    while (!feof(pipe)) {
+        if (fgets(buffer, 128, pipe) != NULL)
+            result += buffer;
+    }
+    pclose(pipe);
+
+    std::cout << result;
+    return result;
 }
 
 int16_t byteArrayToInt16(const char* byteArray) {
@@ -978,9 +1004,7 @@ int main(int argc, char* argv[]) {
 			glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
             glUseProgram(programObjectTextRender);
-            char test[10]; // Adjust size accordingly
-            snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-            print_string(-300, 200, test, 1, 1, 1, 200);
+            print_string(-333, 160, readPersistanceData("i:29229279:504").c_str(), 1, 1, 1, 150); // car speed
 
 			eglSwapBuffers(eglDisplay, eglSurface);
 			switchToMap++;

@@ -88,9 +88,9 @@ GLfloat portraitVertices[] = {
 };
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
-    0.0f, 0.0f,  // Bottom Left
-    0.9f, 0.00f,  // Bottom Right
-    0.9f, 1.0f,  // Top Right
+    0.0f, 0.07f,  // Bottom Left
+    0.90f, 0.07f,  // Bottom Right
+    0.90f, 1.0f,  // Top Right
     0.0f, 1.0f   // Top Left
 };
 // Texture coordinates
@@ -108,8 +108,8 @@ const char CLIENT_INIT[] = {1};
 const char ZLIB_ENCODING[] = {2,0,0,2,0,0,0,6,0,0,0,0};
 
 // SETUP SECTION
-int windowWidth = 800;
-int windowHeight = 480;
+const int windowWidth = 800;
+const int windowHeight = 480;
 
 const char* VNC_SERVER_IP_ADDRESS = "192.168.1.190";
 const int VNC_SERVER_PORT = 5900;
@@ -196,7 +196,7 @@ GLuint compileShader(GLenum type, const char* source) {
     return shader;
 }
 // CODE FROM HERE IS THE SAME FOR WINDOWS OR QNX
-void execute_initial_commands() {
+void executeInitialCommands() {
     std::vector<std::pair<std::string, std::string>> commands = {
         {"on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc i:1304:210 1", "Cannot enable AA sensors data"},
         {"/eso/bin/apps/dmdt sc 4 -9", "Set context of display 4 failed with error"},
@@ -216,7 +216,7 @@ void execute_initial_commands() {
     }
 }
 
-void execute_final_commands() {
+void executeFinalCommands() {
     std::vector<std::pair<std::string, std::string>> commands = {
         {"/eso/bin/apps/dmdt sc 4 70", "Set display 4 (VC) to display table 70 failed with error"}
     };
@@ -232,6 +232,32 @@ void execute_final_commands() {
             std::cerr << error_message << ": " << ret << std::endl;
         }
     }
+}
+
+std::string readPersistanceData(const std::string& position) {
+    std::string command = "";
+#ifdef _WIN32
+    return "NC"; // not connected
+#else
+    command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc " + position;
+#endif
+
+    FILE* pipe = _popen(command.c_str(), "r");
+    if (!pipe) {
+        std::cerr << "Error: Failed to execute command." << std::endl;
+        return "0";
+    }
+
+    char buffer[128];
+    std::string result = "";
+    while (!feof(pipe)) {
+        if (fgets(buffer, 128, pipe) != NULL)
+            result += buffer;
+    }
+    _pclose(pipe);
+
+    std::cout << result;
+    return result;
 }
 
 int16_t byteArrayToInt16(const char* byteArray) {
@@ -425,7 +451,7 @@ char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frame
             }
 
 
-            memcpy(finalFrameBuffer + offset, decompressedData, *frameBufferWidth * *frameBufferHeight * 4);
+            memcpy(finalFrameBuffer + offset, decompressedData, static_cast<size_t>(*frameBufferWidth) * *frameBufferHeight * 4);
             offset = offset + (*frameBufferWidth * *frameBufferHeight * 4);
             // Free memory allocated for framebufferUpdateRectangle
             free(compressedData);
@@ -687,6 +713,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             {
                 closesocket(sockfd);
                 WSACleanup();
+                free(framebufferUpdate);
                 break;
             }
 
@@ -694,6 +721,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
                 std::cerr << "error sending framebuffer update request" << std::endl;
                 closesocket(sockfd);
+                free(framebufferUpdate);
                 WSACleanup();
                 break;
             }
@@ -714,7 +742,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             glClear(GL_COLOR_BUFFER_BIT); // clear all
             glUseProgram(programObject);
             glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
-
 
             // Set vertex positions
             GLint positionAttribute = glGetAttribLocation(programObject, "position");
@@ -737,10 +764,9 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             // Draw quad
             glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
+            // Write text data to VC
             glUseProgram(programObjectTextRender);
-            char test[10]; // Adjust size accordingly
-            snprintf(test, sizeof(test), "%.2f FPS\n", fps);
-            print_string(-300, 200, test, 1, 1, 1, 200);
+            print_string(-333, 160, readPersistanceData("i:29229279:504").c_str(), 1, 1, 1, 150); // car speed
 
             eglSwapBuffers(eglDisplay, eglSurface);
             switchToMap++;
@@ -749,7 +775,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 switchToMap = 0;
                 //execute_initial_commands(); DO NOT RUN ON WINDOWS THERE IS NO NEED
             }
-            free(framebufferUpdate); // Free the dynamically allocated memory
+            // Cleanup
+            glDisableVertexAttribArray(0); // Disable the vertex attribute
+            glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
+            free(framebufferUpdate);
         }
         glDeleteTextures(1, &textureID);
     }
