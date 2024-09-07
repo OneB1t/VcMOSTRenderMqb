@@ -75,16 +75,16 @@ const char* fragmentShaderSourceText =
 
 
 GLfloat landscapeVertices[] = {
-   -0.8f,  0.7, 0.0f,  // Top Left
-    0.8f,  0.7f, 0.0f,  // Top Right
-    0.8f, -0.67f, 0.0f,  // Bottom Right
-   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
+   -0.8f,  0.73, 0.0f,  // Top Left
+    0.8f,  0.73f, 0.0f,  // Top Right
+    0.8f, -0.63f, 0.0f,  // Bottom Right
+   -0.8f, -0.63f, 0.0f   // Bottom Left
 };
 GLfloat portraitVertices[] = {
    -0.8f,  1.0f, 0.0f,  // Top Left
     0.8f,  1.0f, 0.0f,  // Top Right
     0.8f, -0.67f, 0.0f,  // Bottom Right
-   -0.8f, -0.67f, 0.0f   // Bottom Leftvi
+   -0.8f, -0.67f, 0.0f   // Bottom Left
 };
 // Texture coordinates
 GLfloat landscapeTexCoords[] = {
