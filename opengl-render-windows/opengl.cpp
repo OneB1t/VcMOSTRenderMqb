@@ -703,6 +703,8 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             WSACleanup();
             continue;
         }
+        bool running = true;
+
         // Main loop
         while (true)
         {
@@ -779,6 +781,18 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             glDisableVertexAttribArray(0); // Disable the vertex attribute
             glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
             free(framebufferUpdate);
+
+            // Process Windows messages without blocking
+            while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+                if (msg.message == WM_QUIT) {
+                    running = false;
+                    break;
+                }
+
+                TranslateMessage(&msg);
+                DispatchMessage(&msg);
+            }
+
         }
         glDeleteTextures(1, &textureID);
     }
@@ -788,12 +802,6 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     eglDestroySurface(eglDisplay, eglSurface);
     eglTerminate(eglDisplay);
     //execute_final_commands(); DO NOT RUN ON WINDOWS THERE IS NO NEED
-
-    // WINDOWS RELATED STUFF
-    while (GetMessage(&msg, NULL, 0, 0)) {
-        TranslateMessage(&msg);
-        DispatchMessage(&msg);
-    }
 
     return msg.wParam;
 }
