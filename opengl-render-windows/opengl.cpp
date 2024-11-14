@@ -111,7 +111,7 @@ const char ZLIB_ENCODING[] = {2,0,0,2,0,0,0,6,0,0,0,0};
 const int windowWidth = 800;
 const int windowHeight = 480;
 
-const char* VNC_SERVER_IP_ADDRESS = "192.168.1.190";
+const char* VNC_SERVER_IP_ADDRESS = "192.168.1.198";
 const int VNC_SERVER_PORT = 5900;
 
 const char* EXLAP_SERVER_IP_ADDRESS = "127.0.0.1";
@@ -524,7 +524,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     RegisterClass(&wc);
 
     // Create window
-    HWND hWnd = CreateWindowEx(0, className, L"OpenGL QNX render simulator", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+    HWND hWnd = CreateWindowEx(0, className, L"OpenGL QNX render simulator", WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_OVERLAPPED,
         CW_USEDEFAULT, CW_USEDEFAULT, windowWidth, windowHeight, nullptr, nullptr, hInstance, nullptr);
 
     if (hWnd == NULL) {
