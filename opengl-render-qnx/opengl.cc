@@ -1004,11 +1004,11 @@ int main(int argc, char* argv[]) {
 			// Draw quad
 			glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
 
-            print_string(-333, 150, readPersistanceData("s:2001:101").c_str(), 1, 1, 1, 64); // persistance data
+            //print_string(-333, 150, readPersistanceData("s:2001:101").c_str(), 1, 1, 1, 64); // persistance data
 
 			eglSwapBuffers(eglDisplay, eglSurface);
 			switchToMap++;
-			if(switchToMap > 25)
+			if(switchToMap > 20)
 			{
 				switchToMap = 0;
 				execute_initial_commands();
