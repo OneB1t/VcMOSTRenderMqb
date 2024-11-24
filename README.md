@@ -2,7 +2,7 @@
 
 # VNC2MIB2VC - opengl-render-qnx
 
-Telegram group:
+# Telegram group:
 https://t.me/+MCIqkmX6bjY3NTE0
 
 https://github.com/user-attachments/assets/8121a700-7f8b-454b-bcc3-6d35c4149662
@@ -17,15 +17,15 @@ PRE-REQUISITIES: MIB2 with SSH access, Virtual cockpit, VNC server on phone/note
 
 
 
-How it works?
+# How it works?
 ![diagram](https://github.com/user-attachments/assets/d95dcf20-d4ef-49df-ba9e-bef4dc393d52)
 
-How to compile:
+# How to compile:
 https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(QNX-version)
 https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(Windows-version)
 
 
-
+# How to install
 mount all required parts as R/W see https://github.com/jilleb/mib2-toolbox/wiki/SSH-Login for more info also enable SSH to make installation easier
 
 ```
