@@ -17,9 +17,12 @@ PRE-REQUISITIES: MIB2 with SSH access, Virtual cockpit, VNC server on phone/note
 
 
 
-how it works?
+How it works?
 ![diagram](https://github.com/user-attachments/assets/d95dcf20-d4ef-49df-ba9e-bef4dc393d52)
 
+How to compile:
+https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(QNX-version)
+https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(Windows-version)
 
 
 
