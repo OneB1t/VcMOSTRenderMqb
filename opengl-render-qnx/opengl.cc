@@ -511,7 +511,7 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
 // MAIN SECTION IS DIFFERENT ON QNX
 int main(int argc, char* argv[]) {
 
-	printf("QNX MOST VNC render 0.0.7 \n");
+	printf("QNX MOST VNC render 0.0.8 \n");
 	printf("Loading libdisplayinit.so \n");
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {
