@@ -182,6 +182,8 @@ continental VDO (navigation support required)
 > 5G1920798 - golf mk7
 > 
 > 3CG920791 - vw atlas
+>
+> 5NA920790D - tiguan new cluster with MOST (requires build with 1010x376 window)
 
 opengl-render-qnx C++ -> much faster then first python implementation can render around 10fps
 also installation should be much less painfull as it does not require anything special just compiled binary and some way to run it on MIB2 device
