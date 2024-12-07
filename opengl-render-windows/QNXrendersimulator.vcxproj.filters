@@ -49,4 +49,7 @@
     <CopyFileToFolders Include="bin\libGLESv1_CM.dll" />
     <CopyFileToFolders Include="bin\libGLESv2.dll" />
   </ItemGroup>
+  <ItemGroup>
+    <Text Include="config.txt" />
+  </ItemGroup>
 </Project>
