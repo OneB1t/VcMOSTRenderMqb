@@ -108,8 +108,8 @@ const char CLIENT_INIT[] = {1};
 const char ZLIB_ENCODING[] = {2,0,0,2,0,0,0,6,0,0,0,0};
 
 // SETUP SECTION
-const int windowWidth = 800;
-const int windowHeight = 480;
+int windowWidth = 800;
+int windowHeight = 480;
 
 const char* VNC_SERVER_IP_ADDRESS = "192.168.1.198";
 const int VNC_SERVER_PORT = 5900;
@@ -511,6 +511,61 @@ void print_string_center(float y, const char* text, float r, float g, float b, f
     print_string(-stb_easy_font_width(text) * (size / 200), y, text, r, g, b, size);
 }
 
+// Helper function to parse a line for GLfloat arrays
+void parseLineArray(char* line, const char* key, GLfloat* dest, int count) {
+    if (strncmp(line, key, strlen(key)) == 0) {
+        char* values = strchr(line, '=');
+        if (values) {
+            values++; // Skip '='
+            for (int i = 0; i < count; i++) {
+                dest[i] = strtof(values, &values); // Parse floats
+            }
+        }
+    }
+}
+
+// Helper function to parse a line for integers
+void parseLineInt(char* line, const char* key, int* dest) {
+    if (strncmp(line, key, strlen(key)) == 0) {
+        char* value = strchr(line, '=');
+        if (value) {
+            *dest = atoi(value + 1); // Parse integer
+        }
+    }
+}
+
+// Function to load the configuration file
+void loadConfig(const char* filename) {
+    FILE* file = NULL;
+    errno_t err = fopen_s(&file, filename, "r");
+    if (err != 0 || file == NULL) {
+        printf("Config file not found or cannot be opened. Using defaults.\n");
+        return;
+    }
+
+    char line[256];
+    while (fgets(line, sizeof(line), file)) {
+        parseLineArray(line, "landscapeVertices", landscapeVertices, 12);
+        parseLineArray(line, "portraitVertices", portraitVertices, 12);
+        parseLineArray(line, "landscapeTexCoords", landscapeTexCoords, 8);
+        parseLineArray(line, "portraitTexCoords", portraitTexCoords, 8);
+        parseLineInt(line, "windowWidth", &windowWidth);
+        parseLineInt(line, "windowHeight", &windowHeight);
+    }
+
+    fclose(file);
+}
+
+// Function to print GLfloat arrays
+void printArray(const char* label, GLfloat* array, int count, int elementsPerLine) {
+    printf("%s:\n", label);
+    for (int i = 0; i < count; i++) {
+        printf("%f ", array[i]);
+        if ((i + 1) % elementsPerLine == 0) printf("\n");
+    }
+    printf("\n");
+}
+
 // MAIN SECTION IS DIFFERENT ON WINDOWS
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     LPCWSTR className = L"OpenGL QNX render simulator";
@@ -522,6 +577,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.lpszClassName = className;
     wc.style = CS_OWNDC;
     RegisterClass(&wc);
+
+    // Load config
+    loadConfig("config.txt");
+
+    // Print loaded or default values
+    printArray("Landscape vertices", landscapeVertices, 12, 3);
+    printArray("Portrait vertices", portraitVertices, 12, 3);
+    printArray("Landscape texture coordinates", landscapeTexCoords, 8, 2);
+    printArray("Portrait texture coordinates", portraitTexCoords, 8, 2);
 
     // Create window
     HWND hWnd = CreateWindowEx(0, className, L"OpenGL QNX render simulator", WS_OVERLAPPEDWINDOW | WS_VISIBLE | WS_OVERLAPPED,
