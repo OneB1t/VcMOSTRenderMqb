@@ -38,8 +38,9 @@ mount -ur /net/mmx/mnt/app
 ```
 
 
-This software is able to show any VNC stream on virtual cockpit. Final compile file is stored inside opengl-render-qnx/arm/o-le-v7/opengl-render-qnx 
-How to make it run:
+This software is able to show any VNC stream on virtual cockpit. Final compiled binary file is stored inside opengl-render-qnx/arm/o-le-v7/opengl-render-qnx 
+
+# How to make it run:
 1) upload compiled file (opengl-render-qnx/arm/o-le-v7/opengl-render-qnx - https://github.com/OneB1t/VcMOSTRenderMqb/releases) to MIB2 unit via SCP (10.173.189.1) or use SD-card (/fs/sda0 on unit itself)
 2) MIB2 SSH: chmod +x /fs/sda0/opengl-render-qnx
 3) PHONE: connect mobile phone to MIB2 wifi (WARNING it is expected that phone will get 10.173.189.62 this IP is hardcoded for now)
@@ -52,7 +53,7 @@ How to make it run:
          export IPL_CONFIG_DIR=/etc/eso/production
          ./fs/sda0/opengl-render-qnx
  ```
- in case that your phone received some random non-default IP other than 10.173.189.62 address you can specify the address as argument for opengl-render-qnx binary
+ in case that your phone received some random non-default IP other than 10.173.189.62 you can specify the address as argument for opengl-render-qnx binary
 ```
           ./fs/sda0/opengl-render-qnx 10.10.10.2
  ```
@@ -60,6 +61,7 @@ How to make it run:
 
 When you want to get rid if this just restart your MIB2 device and everything is back to stock.
 
+# How to make it start automatically
 For autostartup (this is for advanced users only now please be really careful this can brick unit boot and UART is needed to fix it):
 1. MIB2 SSH: mount root filesystem as R/W (if you do not know how to do this please stop here)
 2. MIB2 SSH: copy opengl-render-qnx into /navigation/opengl-render-qnx (mv /fs/sda0/opengl-render-qnx /navigation/opengl-render-qnx)
@@ -192,7 +194,7 @@ also installation should be much less painfull as it does not require anything s
 https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/0b193c30-7f72-46c4-8433-422bf9de17b9
 
 
-OLD WORK:
+# OLD WORK:
 
 To make this work you need to install Python3.3 to MIB2.5 first using following package repositories: https://pkgsrc.mibsolution.one then save current version of VCRenderData.py to sd card or upload it via winSCP
 To run the code then execute 
