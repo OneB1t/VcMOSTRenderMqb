@@ -604,7 +604,7 @@ void printArray(const char *label, GLfloat *array, int count, int elementsPerLin
 // MAIN SECTION IS DIFFERENT ON QNX
 int main(int argc, char* argv[]) {
 
-	printf("QNX MOST VNC render 0.0.8 \n");
+	printf("QNX MOST VNC render 0.0.9 \n");
 	printf("Loading libdisplayinit.so \n");
 	printf("Loading config.txt \n");
     // Load config
