@@ -193,6 +193,16 @@ also installation should be much less painfull as it does not require anything s
 
 https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/0b193c30-7f72-46c4-8433-422bf9de17b9
 
+# How to use config file
+Since version 0.0.9 it is possible to overwrite default program configuration using config.txt in the same folder as opengl-render-qnx binary. This file contains resolution, texture position and stretch. 
+For binary to be able to search for config file it must be executed from the same directory (so if opengl-render-qnx is inside /fs/sda0/ then use "cd /fs/sda0" first).
+
+> landscapeVertices = -0.8 0.73 0.0 0.8 0.73 0.0 0.8 -0.63 0.0 -0.8 -0.63 0.0
+> portraitVertices = -0.8 1.0 0.0 0.8 1.0 0.0 0.8 -0.67 0.0 -0.8 -0.67 0.0
+> landscapeTexCoords = 0.0 0.07 0.90 0.07 0.90 1.0 0.0 1.0
+> portraitTexCoords = 0.0 0.0 0.63 0.0 0.63 0.3 0.0 0.3
+> windowWidth = 1010
+> windowHeight = 376
 
 # OLD WORK:
 
