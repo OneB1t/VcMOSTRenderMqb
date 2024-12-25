@@ -615,6 +615,9 @@ int main(int argc, char* argv[]) {
     printArray("Portrait vertices", portraitVertices, 12, 3);
     printArray("Landscape texture coordinates", landscapeTexCoords, 8, 2);
     printArray("Portrait texture coordinates", portraitTexCoords, 8, 2);
+    printf("windowWidth = %d;\n", windowWidth);
+    printf("windowHeight = %d;\n", windowHeight);
+
 
 	void* func_handle = dlopen("libdisplayinit.so", RTLD_LAZY);
 	if (!func_handle) {

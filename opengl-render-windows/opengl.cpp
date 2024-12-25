@@ -237,7 +237,7 @@ void executeFinalCommands() {
 std::string readPersistanceData(const std::string& position) {
     std::string command = "";
 #ifdef _WIN32
-    return "NC"; // not connected
+    return ""; // not connected
 #else
     command = "on -f mmx /net/mmx/mnt/app/eso/bin/apps/pc " + position;
 #endif
