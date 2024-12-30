@@ -51,11 +51,13 @@ This software is able to show any VNC stream on virtual cockpit. Final compiled 
 5) MIB2 SSH: run
  ```
          export IPL_CONFIG_DIR=/etc/eso/production
-         ./fs/sda0/opengl-render-qnx
+         cd /fs/sda0/
+         ./opengl-render-qnx
  ```
  in case that your phone received some random non-default IP other than 10.173.189.62 you can specify the address as argument for opengl-render-qnx binary
 ```
-          ./fs/sda0/opengl-render-qnx 10.10.10.2
+          cd /fs/sda0/
+          ./opengl-render-qnx 10.10.10.2
  ```
 7) VC: switch to navigation map and it should now show phone image
 
@@ -69,7 +71,8 @@ For autostartup (this is for advanced users only now please be really careful th
  ```  
     if [ -f /navigation/opengl-render-qnx ]; then
         chmod 0777 /navigation/opengl-render-qnx
-        /navigation/opengl-render-qnx &
+        cd /navigation/
+        ./opengl-render-qnx &
     else
         echo "File /navigation/opengl-render-qnx does not exist."
     fi
@@ -79,7 +82,8 @@ In case that custom IP is required please modify like this where 10.10.10.10 is 
  ```  
     if [ -f /navigation/opengl-render-qnx ]; then
         chmod 0777 /navigation/opengl-render-qnx
-        /navigation/opengl-render-qnx 10.10.10.10 &
+        cd /navigation/
+        ./opengl-render-qnx 10.10.10.10 &
     else
         echo "File /navigation/opengl-render-qnx does not exist."
     fi
@@ -152,7 +156,8 @@ normal_startup()
 
     if [ -f /navigation/opengl-render-qnx ]; then
         chmod 0777 /navigation/opengl-render-qnx
-        /navigation/opengl-render-qnx &
+        cd /navigation
+        ./opengl-render-qnx &
     else
         echo "File /navigation/opengl-render-qnx does not exist."
     fi
