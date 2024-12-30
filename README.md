@@ -28,6 +28,10 @@ https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(Windows-version)
 
 
 # How to install
+Use mib2 toolbox https://github.com/jilleb/mib2-toolbox/commit/5485c5e7a9cabe8939b5d81a5272cebe18c093cc
+
+OR
+
 mount all required parts as R/W see https://github.com/jilleb/mib2-toolbox/wiki/SSH-Login for more info also enable SSH to make installation easier
 
 ```
