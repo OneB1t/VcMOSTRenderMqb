@@ -12,6 +12,8 @@ https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/54d5f16b-2c2a-484a-a8b8-
 
 ![map](https://github.com/OneB1t/VcMOSTRenderMqb/assets/320479/52123bb5-55de-4fb4-871c-195b8fcebdc3)
 ![map+persistence(![photo_2024-09-07_18-07-58](https://github.com/user-attachments/assets/7b1a06fd-9e64-4403-ac04-388283ec7675)
+![image](https://github.com/user-attachments/assets/f1c050f4-7c3b-41f7-bc56-dcf441987376)
+
 )]
 PRE-REQUISITIES: MIB2 with SSH access, Virtual cockpit, VNC server on phone/notebook (tested with Xiaomi 12 + droidVNC-NG)
 
