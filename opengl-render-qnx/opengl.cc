@@ -150,9 +150,9 @@ struct Command {
 
 // CODE FROM HERE IS THE SAME FOR WINDOWS OR QNX
 void execute_initial_commands() {
-	struct Command commands[] = { { "/eso/bin/apps/dmdt dc 99 3",
+	struct Command commands[] = { { "/eso/bin/apps/dmdt dc 70 3",
 			"Create new display table with context 3 failed with error" }, {
-			"/eso/bin/apps/dmdt sc 4 99",
+			"/eso/bin/apps/dmdt sc 4 70",
 			"Set display 4 (VC) to display table 99 failed with error" } };
 	size_t num_commands = sizeof(commands) / sizeof(commands[0]);
 
@@ -170,8 +170,10 @@ void execute_initial_commands() {
 }
 
 void execute_final_commands() {
-	struct Command commands[] = { { "/eso/bin/apps/dmdt sc 4 70",
-			"Set display 4 (VC) to display table 70 failed with error" } };
+	struct Command commands[] = { { "/eso/bin/apps/dmdt dc 70 33",
+			"Create new display table with context 3 failed with error" }, {
+			"/eso/bin/apps/dmdt sc 4 70",
+			"Set display 4 (VC) to display table 99 failed with error" } };
 	size_t num_commands = sizeof(commands) / sizeof(commands[0]);
 
 	for (size_t i = 0; i < num_commands; ++i) {
@@ -604,7 +606,7 @@ void printArray(const char *label, GLfloat *array, int count, int elementsPerLin
 // MAIN SECTION IS DIFFERENT ON QNX
 int main(int argc, char* argv[]) {
 
-	printf("QNX MOST VNC render 0.0.9 \n");
+	printf("QNX MOST VNC render 0.1.0 \n");
 	printf("Loading libdisplayinit.so \n");
 	printf("Loading config.txt \n");
     // Load config
@@ -1047,7 +1049,6 @@ int main(int argc, char* argv[]) {
 		int finalHeight = 0;
 
 		int frameCount = 0;
-		int switchToMap = 0;
 		double fps = 0.0;
 		time_t startTime = time(NULL);
 
@@ -1074,6 +1075,7 @@ int main(int argc, char* argv[]) {
 		}
 
 		// Main loop
+		execute_initial_commands();
 		while (true) {
 			frameCount++;
 			char* framebufferUpdate = parseFramebufferUpdate(sockfd,
@@ -1148,11 +1150,6 @@ int main(int argc, char* argv[]) {
 			//print_string(-333, 150, readPersistanceData("s:2001:101").c_str(), 1, 1, 1, 64); // persistance data
 
 			eglSwapBuffers(eglDisplay, eglSurface);
-			switchToMap++;
-			if (switchToMap > 20) {
-				switchToMap = 0;
-				execute_initial_commands();
-			}
 			free(framebufferUpdate); // Free the dynamically allocated memory
 		}
 		glDeleteTextures(1, &textureID);
