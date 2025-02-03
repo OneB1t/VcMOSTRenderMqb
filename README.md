@@ -28,7 +28,8 @@ https://github.com/OneB1t/VcMOSTRenderMqb/wiki/How-to-compile-(Windows-version)
 
 
 # How to install
-Use mib2 toolbox https://github.com/jilleb/mib2-toolbox/commit/5485c5e7a9cabe8939b5d81a5272cebe18c093cc
+Use mib2 toolbox https://github.com/jilleb/mib2-toolbox/commit/7ec3b7540d48acfebb5d331820b4ee55eff66772
+mib2 toolbox can be also used for 20FPS MOST patch (MOST video speed is increased from 10FPS to 20FPS) which provides more fluent VNC stream
 
 OR
 
