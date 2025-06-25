@@ -386,52 +386,60 @@
                 free(compressedData);
                 free(decompressedData);
             }
-            else if (encodingType[3] == '\x7') { // Tight encoding (0x07)
-                // Read Tight header byte
+            else if (encodingType[3] == '\x7') { // Tight encoding
                 unsigned char tightControl;
                 if (recv(socket_fd, (char*)&tightControl, 1, MSG_WAITALL) != 1) {
                     fprintf(stderr, "Error reading Tight control byte\n");
-                    free(decompressedData);
                     free(finalFrameBuffer);
                     return NULL;
                 }
 
-                // For simplicity: Handle only compression (not JPEG or filters here)
-                // 3-bit compression control (lowest bits)
                 unsigned int compressionControl = tightControl & 0x07;
-
                 int compressedLength = readTightLength(socket_fd);
                 if (compressedLength < 0) {
-                    free(decompressedData);
                     free(finalFrameBuffer);
                     return NULL;
                 }
+
                 char* compressedData = (char*)malloc(compressedLength);
+                if (!compressedData) {
+                    fprintf(stderr, "Memory allocation failure\n");
+                    free(finalFrameBuffer);
+                    return NULL;
+                }
+
                 if (recv(socket_fd, compressedData, compressedLength, MSG_WAITALL) != compressedLength) {
                     fprintf(stderr, "Error reading Tight compressed data\n");
                     free(compressedData);
-                    free(decompressedData);
                     free(finalFrameBuffer);
                     return NULL;
                 }
 
                 totalLoadedSize += decompressedSize;
-                finalFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
+                char* newFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
+                if (!newFrameBuffer) {
+                    fprintf(stderr, "Memory allocation failure\n");
+                    free(compressedData);
+                    free(finalFrameBuffer);
+                    return NULL;
+                }
+                finalFrameBuffer = newFrameBuffer;
 
-                // Select zlib stream based on compressionControl bits (0-3)
-                // You need 4 separate streams for Tight encoding (passed as strm[0..3])
                 z_stream* chosenStrm = &strm[compressionControl];
-
                 chosenStrm->avail_in = compressedLength;
                 chosenStrm->next_in = (Bytef*)compressedData;
                 chosenStrm->avail_out = decompressedSize;
                 chosenStrm->next_out = (Bytef*)decompressedData;
 
-                ret = inflate(chosenStrm, Z_SYNC_FLUSH);
-                if (ret != Z_OK && ret != Z_STREAM_END) {
-                    fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg);
+                int ret;
+                do {
+                    ret = inflate(chosenStrm, Z_SYNC_FLUSH);
+                    // Z_BUF_ERROR is normal if inflate needs more input/output space; continue until all consumed
+                } while ((ret == Z_OK || ret == Z_BUF_ERROR) && chosenStrm->avail_out > 0 && chosenStrm->avail_in > 0);
+
+                if (ret != Z_STREAM_END && ret != Z_OK) {
+                    fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
                     free(compressedData);
-                    free(decompressedData);
                     free(finalFrameBuffer);
                     return NULL;
                 }
@@ -440,11 +448,9 @@
                 offset += decompressedSize;
 
                 free(compressedData);
-                free(decompressedData);
             }
             else {
                 fprintf(stderr, "Unsupported encoding: 0x%02x\n", encodingType[3]);
-                free(decompressedData);
                 free(finalFrameBuffer);
                 return NULL;
             }
