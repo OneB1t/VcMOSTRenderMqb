@@ -344,48 +344,6 @@
                 return NULL;
             }
 
-            if (encodingType[3] == '\x6') { // ZLIB encoding
-                char compressedDataSize[4];
-                if (!recv(socket_fd, compressedDataSize, 4, MSG_WAITALL)) {
-                    fprintf(stderr, "Zlib compressedDataSize not found\n");
-                    free(decompressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-                int compSize = byteArrayToInt32(compressedDataSize);
-                char* compressedData = (char*)malloc(compSize);
-                int recvdSize = recv(socket_fd, compressedData, compSize, MSG_WAITALL);
-                if (recvdSize < 0) {
-                    perror("Error receiving framebuffer update rectangle");
-                    free(compressedData);
-                    free(decompressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                totalLoadedSize += decompressedSize;
-                finalFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
-
-                // Setup zlib stream for decompression
-                strm[0].avail_in = recvdSize;
-                strm[0].next_in = (Bytef*)compressedData;
-                strm[0].avail_out = decompressedSize;
-                strm[0].next_out = (Bytef*)decompressedData;
-                ret = inflate(&strm[0], Z_NO_FLUSH);
-                if (ret < 0 && ret != Z_BUF_ERROR) {
-                    fprintf(stderr, "Error decompressing zlib data: %s\n", strm[0].msg);
-                    inflateEnd(&strm[0]);
-                    free(compressedData);
-                    free(decompressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-                memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
-                offset += decompressedSize;
-
-                free(compressedData);
-                free(decompressedData);
-            }
             else if (encodingType[3] == '\x7') { // Tight encoding
                 unsigned char tightControl;
                 if (recv(socket_fd, (char*)&tightControl, 1, MSG_WAITALL) != 1) {
@@ -395,6 +353,7 @@
                 }
 
                 unsigned int compressionControl = tightControl & 0x07;
+
                 int compressedLength = readTightLength(socket_fd);
                 if (compressedLength < 0) {
                     free(finalFrameBuffer);
@@ -415,10 +374,19 @@
                     return NULL;
                 }
 
+                char* decompressedData = (char*)malloc(decompressedSize);
+                if (!decompressedData) {
+                    fprintf(stderr, "Memory allocation failure for decompressed data\n");
+                    free(compressedData);
+                    free(finalFrameBuffer);
+                    return NULL;
+                }
+
                 totalLoadedSize += decompressedSize;
                 char* newFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
                 if (!newFrameBuffer) {
-                    fprintf(stderr, "Memory allocation failure\n");
+                    fprintf(stderr, "Memory allocation failure (realloc)\n");
+                    free(decompressedData);
                     free(compressedData);
                     free(finalFrameBuffer);
                     return NULL;
@@ -434,11 +402,11 @@
                 int ret;
                 do {
                     ret = inflate(chosenStrm, Z_SYNC_FLUSH);
-                    // Z_BUF_ERROR is normal if inflate needs more input/output space; continue until all consumed
                 } while ((ret == Z_OK || ret == Z_BUF_ERROR) && chosenStrm->avail_out > 0 && chosenStrm->avail_in > 0);
 
-                if (ret != Z_STREAM_END && ret != Z_OK) {
+                if (ret != Z_OK && ret != Z_STREAM_END) {
                     fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
+                    free(decompressedData);
                     free(compressedData);
                     free(finalFrameBuffer);
                     return NULL;
@@ -447,6 +415,7 @@
                 memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
                 offset += decompressedSize;
 
+                free(decompressedData);
                 free(compressedData);
             }
             else {
