@@ -346,82 +346,76 @@
 
             else if (encodingType[3] == '\x7') { // Tight encoding
                 unsigned char tightControl;
+                char* compressedData = NULL;
+                char* decompressedData = NULL;
+                bool success = false;
+
                 if (recv(socket_fd, (char*)&tightControl, 1, MSG_WAITALL) != 1) {
                     fprintf(stderr, "Error reading Tight control byte\n");
+                }
+                else {
+                    unsigned int compressionControl = tightControl & 0x07;
+
+                    int compressedLength = readTightLength(socket_fd);
+                    if (compressedLength < 0) {
+                        fprintf(stderr, "Invalid compressed length\n");
+                    }
+                    else {
+                        compressedData = (char*)malloc(compressedLength);
+                        if (!compressedData) {
+                            fprintf(stderr, "Memory allocation failure (compressedData)\n");
+                        }
+                        else if (recv(socket_fd, compressedData, compressedLength, MSG_WAITALL) != compressedLength) {
+                            fprintf(stderr, "Error reading Tight compressed data\n");
+                        }
+                        else {
+                            decompressedData = (char*)malloc(decompressedSize);
+                            if (!decompressedData) {
+                                fprintf(stderr, "Memory allocation failure (decompressedData)\n");
+                            }
+                            else {
+                                char* newFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize + decompressedSize);
+                                if (!newFrameBuffer) {
+                                    fprintf(stderr, "Memory allocation failure (realloc finalFrameBuffer)\n");
+                                }
+                                else {
+                                    finalFrameBuffer = newFrameBuffer;
+
+                                    z_stream* chosenStrm = &strm[compressionControl];
+                                    chosenStrm->avail_in = compressedLength;
+                                    chosenStrm->next_in = (Bytef*)compressedData;
+                                    chosenStrm->avail_out = decompressedSize;
+                                    chosenStrm->next_out = (Bytef*)decompressedData;
+
+                                    int ret;
+                                    do {
+                                        ret = inflate(chosenStrm, Z_SYNC_FLUSH);
+                                    } while ((ret == Z_OK || ret == Z_BUF_ERROR) &&
+                                        chosenStrm->avail_out > 0 && chosenStrm->avail_in > 0);
+
+                                    if (ret != Z_OK && ret != Z_STREAM_END) {
+                                        fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
+                                    }
+                                    else {
+                                        memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
+                                        offset += decompressedSize;
+                                        totalLoadedSize += decompressedSize;
+                                        success = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // Clean up memory
+                if (compressedData) free(compressedData);
+                if (decompressedData) free(decompressedData);
+
+                if (!success) {
                     free(finalFrameBuffer);
                     return NULL;
                 }
-
-                unsigned int compressionControl = tightControl & 0x07;
-
-                int compressedLength = readTightLength(socket_fd);
-                if (compressedLength < 0) {
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                char* compressedData = (char*)malloc(compressedLength);
-                if (!compressedData) {
-                    fprintf(stderr, "Memory allocation failure\n");
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                if (recv(socket_fd, compressedData, compressedLength, MSG_WAITALL) != compressedLength) {
-                    fprintf(stderr, "Error reading Tight compressed data\n");
-                    free(compressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                char* decompressedData = (char*)malloc(decompressedSize);
-                if (!decompressedData) {
-                    fprintf(stderr, "Memory allocation failure for decompressed data\n");
-                    free(compressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                totalLoadedSize += decompressedSize;
-                char* newFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize);
-                if (!newFrameBuffer) {
-                    fprintf(stderr, "Memory allocation failure (realloc)\n");
-                    free(decompressedData);
-                    free(compressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-                finalFrameBuffer = newFrameBuffer;
-
-                z_stream* chosenStrm = &strm[compressionControl];
-                chosenStrm->avail_in = compressedLength;
-                chosenStrm->next_in = (Bytef*)compressedData;
-                chosenStrm->avail_out = decompressedSize;
-                chosenStrm->next_out = (Bytef*)decompressedData;
-
-                int ret;
-                do {
-                    ret = inflate(chosenStrm, Z_SYNC_FLUSH);
-                } while ((ret == Z_OK || ret == Z_BUF_ERROR) && chosenStrm->avail_out > 0 && chosenStrm->avail_in > 0);
-
-                if (ret != Z_OK && ret != Z_STREAM_END) {
-                    fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
-                    free(decompressedData);
-                    free(compressedData);
-                    free(finalFrameBuffer);
-                    return NULL;
-                }
-
-                memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
-                offset += decompressedSize;
-
-                free(decompressedData);
-                free(compressedData);
-            }
-            else {
-                fprintf(stderr, "Unsupported encoding: 0x%02x\n", encodingType[3]);
-                free(finalFrameBuffer);
-                return NULL;
             }
         }
         return finalFrameBuffer;
@@ -527,6 +521,12 @@
             }
         }
         return Z_OK;
+    }
+
+    void cleanupZlibStreams() {
+        for (int i = 0; i < NUM_ZLIB_STREAMS; i++) {
+            inflateEnd(&strm[i]);
+        }
     }
 
     int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
@@ -667,6 +667,7 @@
                 char* framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
                 if (framebufferUpdate == NULL)
                 {
+                    cleanupZlibStreams();
                     closesocket(sockfd);
                     WSACleanup();
                     free(framebufferUpdate);
@@ -674,6 +675,7 @@
                 }
                 if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
                     std::cerr << "error sending framebuffer update request" << std::endl;
+                    cleanupZlibStreams();
                     closesocket(sockfd);
                     free(framebufferUpdate);
                     WSACleanup();
