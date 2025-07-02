@@ -1,4 +1,4 @@
-﻿    #include <algorithm> 
+﻿    #include <algorithm>
     #include <codecvt>
     #include <EGL/egl.h>
     #include <filesystem>
@@ -23,6 +23,10 @@
     //GLES setup
     #define NUM_ZLIB_STREAMS 4
     z_stream strm[NUM_ZLIB_STREAMS];
+
+    #define MAX_FRAMEBUFFER_SIZE (8*1024*1024)  // 16 MB max framebuffer size
+    #define MAX_RECTANGLE_SIZE (261120)     // max decompression buffer size (Full HD RGBA)
+    #define MAX_COMPRESSED_SIZE (1024 * 1024)        // 1 MB max compressed data buffer
 
     GLuint programObject;
     GLuint programObjectTextRender;
@@ -77,6 +81,27 @@
     0, 1,       // number of encodings = 1
     0, 0, 0, 7  // encoding: 7 (Tight)
     };
+
+    struct PixelFormat {
+        uint8_t bitsPerPixel;
+        uint8_t depth;
+        uint8_t bigEndianFlag;
+        uint8_t trueColorFlag;
+        uint16_t redMax;
+        uint16_t greenMax;
+        uint16_t blueMax;
+        uint8_t redShift;
+        uint8_t greenShift;
+        uint8_t blueShift;
+        uint8_t padding[3];
+    };
+
+    typedef struct {
+        long long totalMs;
+        long long recvHeaderMs;
+        long long recvRectsMs;
+        long long decompressMs;
+    } ParseTiming;
 
     // SETUP SECTION
     int windowWidth = 800;    int windowHeight = 480;
@@ -292,134 +317,246 @@
         return length;
     }
 
-    char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm[], int* finalHeight)
+    void debugPrintRect(int width, int height, int encoding) {
+        char buffer[128];
+        snprintf(buffer, sizeof(buffer), "Rect: width=%d height=%d encoding=0x%08X\n", width, height, encoding);
+        OutputDebugStringA(buffer);
+    }
+    static bool recv_all(SOCKET sock, void* buffer, size_t length) {
+        size_t total_received = 0;
+        char* ptr = (char*)buffer;
+        while (total_received < length) {
+            int bytes = recv(sock, ptr + total_received, length - total_received, MSG_WAITALL);
+            if (bytes <= 0) return false;
+            total_received += bytes;
+        }
+        return true;
+    }
+
+    char* parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth, int* frameBufferHeight, z_stream strm[], int* finalHeight, ParseTiming* timingOut)
     {
-        char messageType[1];
-        if (!recv(socket_fd, messageType, 1, MSG_WAITALL)) {
-            fprintf(stderr, "Error reading message type\n");
-            return NULL;
-        }
-        char padding[1];
-        if (!recv(socket_fd, padding, 1, MSG_WAITALL)) {
-            fprintf(stderr, "Error reading padding\n");
-            return NULL;
-        }
-        char numberOfRectangles[2];
-        if (!recv(socket_fd, numberOfRectangles, 2, MSG_WAITALL)) {
-            fprintf(stderr, "Error reading number of rectangles\n");
-            return NULL;
-        }
+        using Clock = std::chrono::high_resolution_clock;
+        auto startTime = Clock::now();
+        auto lastTime = startTime;
+        static char* finalFrameBuffer = NULL;
+        static size_t finalFrameBufferSize = 0;
 
-        int totalLoadedSize = 0;
-        char* finalFrameBuffer = (char*)malloc(1);
+        static char* decompressedData = NULL;
+        static size_t decompressedDataSize = 0;
+
+        static char* compressedData = NULL;
+        static size_t compressedDataSize = 0;
+
+        char header[4];
+
+        if (!recv_all(socket_fd, header, sizeof(header))) {
+            fprintf(stderr, "Error reading framebuffer update header\n");
+            return NULL;
+        }
+        auto recvHeaderTime = Clock::now();
+        timingOut->recvHeaderMs = std::chrono::duration_cast<std::chrono::milliseconds>(recvHeaderTime - lastTime).count();
+        lastTime = recvHeaderTime;
+
+        int numRectangles = byteArrayToInt16(&header[2]);
         int offset = 0;
-        int ret = 0;
+        *finalHeight = 0;
 
-        int numRectangles = byteArrayToInt16(numberOfRectangles);
-
-        for (int i = 0; i < numRectangles; i++) {
-            char xPosition[2], yPosition[2], width[2], height[2], encodingType[4];
-            if (!recv(socket_fd, xPosition, 2, MSG_WAITALL) ||
-                !recv(socket_fd, yPosition, 2, MSG_WAITALL) ||
-                !recv(socket_fd, width, 2, MSG_WAITALL) ||
-                !recv(socket_fd, height, 2, MSG_WAITALL) ||
-                !recv(socket_fd, encodingType, 4, MSG_WAITALL)) {
-                fprintf(stderr, "Error reading rectangle header\n");
-                free(finalFrameBuffer);
+        // Allocate or resize the final framebuffer
+        if (!finalFrameBuffer) {
+            finalFrameBuffer = (char*)malloc(MAX_FRAMEBUFFER_SIZE);
+            if (!finalFrameBuffer) {
+                perror("malloc finalFrameBuffer");
                 return NULL;
             }
+            finalFrameBufferSize = MAX_FRAMEBUFFER_SIZE;
+        }
 
-            int rectWidth = byteArrayToInt16(width);
-            int rectHeight = byteArrayToInt16(height);
+        // Rectangle parsing loop
+        long long totalRecvRects = 0;
+        long long totalDecompress = 0;
+
+        for (int i = 0; i < numRectangles; i++) {
+            auto rectStart = Clock::now();
+            char rectHeader[12];
+            if (!recv_all(socket_fd, rectHeader, sizeof(rectHeader))) {
+                fprintf(stderr, "Error reading rectangle header\n");
+                return NULL;
+            }
+            auto rectRecvDone = Clock::now();
+            int rectWidth = byteArrayToInt16(&rectHeader[4]);
+            int rectHeight = byteArrayToInt16(&rectHeader[6]);
+            int encodingType = byteArrayToInt32(&rectHeader[8]);
+            if (encodingType == 0x000000FF || encodingType > 0x08 || encodingType == 0x00000000) {
+                continue;
+            }
+
+            if (rectWidth <= 0 || rectHeight <= 0 || rectWidth > 10000 || rectHeight > 10000) {
+                continue;
+            }
+
+
+
+            int decompressedSize = rectWidth * rectHeight * 4;
+            if (encodingType == 0x000000FF || encodingType > 0x08 || encodingType == 0x00000000) {
+                // Solid color fill rectangle, no decompression needed
+                decompressedSize = 4;
+			}
+            if ((size_t)(offset + decompressedSize) > finalFrameBufferSize) {
+                fprintf(stderr, "Final framebuffer overflow at %d bytes\n", offset + decompressedSize);
+                return NULL;
+            }
             *frameBufferWidth = rectWidth;
             *frameBufferHeight = rectHeight;
             *finalHeight += rectHeight;
 
-            // Buffer for decompressed data (RGBA)
-            int decompressedSize = rectWidth * rectHeight * 4;
-            char* decompressedData = (char*)malloc(decompressedSize);
-            if (!decompressedData) {
-                perror("Error allocating decompressedData");
-                free(finalFrameBuffer);
-                return NULL;
+            // Grow decompression buffer if needed (exponential growth)
+            while ((size_t)decompressedSize > decompressedDataSize) {
+                size_t newSize = decompressedDataSize ? decompressedDataSize * 2 : MAX_RECTANGLE_SIZE;
+                decompressedData = (char*)realloc(decompressedData, newSize);
+                if (!decompressedData) {
+                    perror("realloc decompressedData");
+                    return NULL;
+                }
+                decompressedDataSize = newSize;
             }
+            auto decompressDone = Clock::now();
 
-            else if (encodingType[3] == '\x7') { // Tight encoding
+            bool success = false;
+            if (encodingType == 0x000000FF || encodingType > 0x08 || encodingType == 0x00000000)  {
+                // Solid color fill rectangle
+                unsigned char color[4];
+                if (!recv_all(socket_fd, (char*)color, 4)) {
+                    fprintf(stderr, "Error reading solid fill color\n");
+                    return NULL;
+                }
+
+                // Fill the rectangle in the framebuffer
+                // finalFrameBuffer is your framebuffer pointer
+                // framebufferWidth is total width of framebuffer
+                for (int row = 0; row < 800; row++) {
+                    char* dest = finalFrameBuffer;
+                    for (int col = 0; col < 480; col++) {
+                        memcpy(dest + col * 4, color, 4);
+                    }
+                }
+
+                // Advance offset or whatever your logic needs
+
+            }
+            else if (encodingType == 0x07) {  // Tight encoding
                 unsigned char tightControl;
-                char* compressedData = NULL;
-                char* decompressedData = NULL;
-                bool success = false;
 
                 if (recv(socket_fd, (char*)&tightControl, 1, MSG_WAITALL) != 1) {
                     fprintf(stderr, "Error reading Tight control byte\n");
-                }
-                else {
-                    unsigned int compressionControl = tightControl & 0x07;
-
-                    int compressedLength = readTightLength(socket_fd);
-                    if (compressedLength < 0) {
-                        fprintf(stderr, "Invalid compressed length\n");
-                    }
-                    else {
-                        compressedData = (char*)malloc(compressedLength);
-                        if (!compressedData) {
-                            fprintf(stderr, "Memory allocation failure (compressedData)\n");
-                        }
-                        else if (recv(socket_fd, compressedData, compressedLength, MSG_WAITALL) != compressedLength) {
-                            fprintf(stderr, "Error reading Tight compressed data\n");
-                        }
-                        else {
-                            decompressedData = (char*)malloc(decompressedSize);
-                            if (!decompressedData) {
-                                fprintf(stderr, "Memory allocation failure (decompressedData)\n");
-                            }
-                            else {
-                                char* newFrameBuffer = (char*)realloc(finalFrameBuffer, totalLoadedSize + decompressedSize);
-                                if (!newFrameBuffer) {
-                                    fprintf(stderr, "Memory allocation failure (realloc finalFrameBuffer)\n");
-                                }
-                                else {
-                                    finalFrameBuffer = newFrameBuffer;
-
-                                    z_stream* chosenStrm = &strm[compressionControl];
-                                    chosenStrm->avail_in = compressedLength;
-                                    chosenStrm->next_in = (Bytef*)compressedData;
-                                    chosenStrm->avail_out = decompressedSize;
-                                    chosenStrm->next_out = (Bytef*)decompressedData;
-
-                                    int ret;
-                                    do {
-                                        ret = inflate(chosenStrm, Z_SYNC_FLUSH);
-                                    } while ((ret == Z_OK || ret == Z_BUF_ERROR) &&
-                                        chosenStrm->avail_out > 0 && chosenStrm->avail_in > 0);
-
-                                    if (ret != Z_OK && ret != Z_STREAM_END) {
-                                        fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
-                                    }
-                                    else {
-                                        memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
-                                        offset += decompressedSize;
-                                        totalLoadedSize += decompressedSize;
-                                        success = true;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-
-                // Clean up memory
-                if (compressedData) free(compressedData);
-                if (decompressedData) free(decompressedData);
-
-                if (!success) {
-                    free(finalFrameBuffer);
                     return NULL;
                 }
+
+                unsigned int compressionControl = tightControl & 0x07;
+                bool resetStream = (tightControl & 0x08) != 0;
+
+                int compressedLength = readTightLength(socket_fd);
+                if (compressedLength < 0) {
+                    fprintf(stderr, "Invalid compressed length\n");
+                    return NULL;
+                }
+
+                if ((size_t)compressedLength > compressedDataSize) {
+                    char* tmp = (char*)realloc(compressedData, compressedLength);
+                    if (!tmp) {
+                        perror("realloc compressedData");
+                        return NULL;
+                    }
+                    compressedData = tmp;
+                    compressedDataSize = compressedLength;
+                }
+
+                if (!recv_all(socket_fd, compressedData, compressedLength)) {
+                    fprintf(stderr, "Error reading compressed data\n");
+                    return NULL;
+                }
+
+                z_stream* chosenStrm = &strm[compressionControl];
+
+                if (resetStream) {
+                    if (inflateReset(chosenStrm) != Z_OK) {
+                        fprintf(stderr, "inflateReset failed\n");
+                        return NULL;
+                    }
+                }
+
+                chosenStrm->avail_in = compressedLength;
+                chosenStrm->next_in = (Bytef*)compressedData;
+                chosenStrm->avail_out = decompressedSize;
+                chosenStrm->next_out = (Bytef*)decompressedData;
+
+                int ret = inflate(chosenStrm, Z_SYNC_FLUSH);
+
+                // Accept Z_OK or Z_STREAM_END, treat Z_BUF_ERROR as non-fatal if no output needed
+                if (ret != Z_OK && ret != Z_STREAM_END && ret != Z_BUF_ERROR) {
+                    fprintf(stderr, "Tight inflate error: %s\n", chosenStrm->msg ? chosenStrm->msg : "unknown");
+                    return NULL;
+                }
+
+                memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
+                offset += decompressedSize;
+                success = true;
             }
+            else if ((encodingType & 0xFF) == 0x08) {
+                // Solid color fill     
+                // Read 4 bytes of pixel color data
+                unsigned char pixelColor[4];
+                if (!recv_all(socket_fd, (char*)pixelColor, 4)) {
+                    fprintf(stderr, "Error reading fill color\n");
+                    return NULL;
+                }
+
+                // Fill decompressedData buffer with this pixel color
+                for (int px = 0; px < decompressedSize; px += 4) {
+                    memcpy(decompressedData + px, pixelColor, 4);
+                }
+
+                memcpy(finalFrameBuffer + offset, decompressedData, decompressedSize);
+                offset += decompressedSize;
+                success = true;
+            }
+            else if (encodingType > 0x08)
+            {
+                // Solid color fill rectangle
+                unsigned char color[4];
+                if (!recv_all(socket_fd, (char*)color, 4)) {
+                    fprintf(stderr, "Error reading solid fill color\n");
+                    return NULL;
+                }
+
+                // Fill the rectangle in the framebuffer
+                // finalFrameBuffer is your framebuffer pointer
+                // framebufferWidth is total width of framebuffer
+                for (int row = 0; row < 800; row++) {
+                    char* dest = finalFrameBuffer;
+                    for (int col = 0; col < 480; col++) {
+                        memcpy(dest + col * 4, color, 4);
+                    }
+                }
+            }
+            else {
+                fprintf(stderr, "Unsupported encoding: 0x%08x\n", encodingType);
+                return NULL;
+            }
+
+            if (!success) {
+                fprintf(stderr, "Failed to process rectangle %d\n", i);
+                return NULL;
+            }
+            totalRecvRects += std::chrono::duration_cast<std::chrono::milliseconds>(rectRecvDone - rectStart).count();
+            totalDecompress += std::chrono::duration_cast<std::chrono::milliseconds>(decompressDone - rectRecvDone).count();
         }
+        timingOut->recvRectsMs = totalRecvRects;
+        timingOut->decompressMs = totalDecompress;
+        timingOut->totalMs = std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - startTime).count();
         return finalFrameBuffer;
     }
+
+
     void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
         char inputBuffer[2000] = { 0 }; // ~500 chars
         GLfloat triangleBuffer[2000] = { 0 };
@@ -466,6 +603,8 @@
             }
         }
     }
+
+
     void parseLineInt(char* line, const char* key, int* dest) {
         if (strncmp(line, key, strlen(key)) == 0) {
             char* value = strchr(line, '=');
@@ -661,26 +800,30 @@
             }
             bool running = true;
             // Main loop
-            while (true)
-            {
+            while (running) {
+                using Clock = std::chrono::high_resolution_clock;
+                auto frameStartTime = Clock::now();
+
                 frameCount++;
-                char* framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight);
-                if (framebufferUpdate == NULL)
-                {
-                    cleanupZlibStreams();
-                    closesocket(sockfd);
-                    WSACleanup();
-                    free(framebufferUpdate);
-                    break;
-                }
+                ParseTiming timing;
                 if (send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0) < 0) {
-                    std::cerr << "error sending framebuffer update request" << std::endl;
+                    std::cerr << "Error sending framebuffer update request\n";
                     cleanupZlibStreams();
                     closesocket(sockfd);
-                    free(framebufferUpdate);
                     WSACleanup();
                     break;
                 }
+                char* framebufferUpdate = parseFramebufferUpdate(sockfd, &framebufferWidthInt, &framebufferHeightInt, strm, &finalHeight, &timing);
+
+                if (framebufferUpdate == NULL) {
+                    cleanupZlibStreams();
+                    closesocket(sockfd);
+                    WSACleanup();
+                    break;
+                }
+
+
+
                 time_t currentTime = time(NULL);
                 double elapsedTime = difftime(currentTime, startTime);
                 if (elapsedTime >= 1.0) {
@@ -688,37 +831,50 @@
                     frameCount = 0;
                     startTime = currentTime;
                 }
-                glClear(GL_COLOR_BUFFER_BIT); // clear all
+
+                // OpenGL draw pipeline
+                glClear(GL_COLOR_BUFFER_BIT);
                 glUseProgram(programObject);
+
                 glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, framebufferWidthInt, finalHeight, 0, GL_RGBA, GL_UNSIGNED_BYTE, framebufferUpdate);
+
                 GLint positionAttribute = glGetAttribLocation(programObject, "position");
-                if (framebufferWidthInt > finalHeight)
-                   glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, landscapeVertices);
-                else
-                    glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, portraitVertices);
-                glEnableVertexAttribArray(positionAttribute);
                 GLint texCoordAttrib = glGetAttribLocation(programObject, "texCoord");
-                if (framebufferWidthInt > finalHeight)
-                    glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, landscapeTexCoords);
-                else
-                    glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, portraitTexCoords);
+
+                const GLfloat* vertices = framebufferWidthInt > finalHeight ? landscapeVertices : portraitVertices;
+                const GLfloat* texCoords = framebufferWidthInt > finalHeight ? landscapeTexCoords : portraitTexCoords;
+
+                glVertexAttribPointer(positionAttribute, 3, GL_FLOAT, GL_FALSE, 0, vertices);
+                glEnableVertexAttribArray(positionAttribute);
+
+                glVertexAttribPointer(texCoordAttrib, 2, GL_FLOAT, GL_FALSE, 0, texCoords);
                 glEnableVertexAttribArray(texCoordAttrib);
-                finalHeight = 0;
+
                 glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+
+                // Overlay text (FPS + parse duration)
                 glUseProgram(programObjectTextRender);
-                static char buffer[8];
-                snprintf(buffer, sizeof(buffer), "%.2f", fps);
-                print_string(-360, 230, buffer, 1, 1, 1, 150); // car speed
+                char overlayLine1[64], overlayLine2[64];
+
+                snprintf(overlayLine1, sizeof(overlayLine1), "FPS: %.f  T: %lldms", fps, timing.totalMs);
+                snprintf(overlayLine2, sizeof(overlayLine2), "RH: %lld  R: %lld  D: %lld",
+                    timing.recvHeaderMs,
+                    timing.recvRectsMs,
+                    timing.decompressMs);
+
+                int y = 230;
+                print_string(-360, y, overlayLine1, 1, 1, 1, 150);
+                print_string(-360, y - 25, overlayLine2, 1, 1, 1, 150);
+
                 eglSwapBuffers(eglDisplay, eglSurface);
-                switchToMap++;
-                if (switchToMap > 25)
-                {
-                    switchToMap = 0;
-                }
-                glDisableVertexAttribArray(0); // Disable the vertex attribute
-                glBindBuffer(GL_ARRAY_BUFFER, 0); // Unbind the VBO
-                free(framebufferUpdate);
-                // Process Windows messages without blocking
+
+                switchToMap = (switchToMap + 1) % 26;
+
+                glDisableVertexAttribArray(positionAttribute);
+                glDisableVertexAttribArray(texCoordAttrib);
+                glBindBuffer(GL_ARRAY_BUFFER, 0);
+
+                // Windows event pump
                 while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
                     if (msg.message == WM_QUIT) {
                         running = false;
@@ -727,6 +883,8 @@
                     TranslateMessage(&msg);
                     DispatchMessage(&msg);
                 }
+
+                finalHeight = 0;  // reset for next frame
             }
             glDeleteTextures(1, &textureID);
         }
