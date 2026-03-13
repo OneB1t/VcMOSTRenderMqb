@@ -1,16 +1,4 @@
-﻿// ============================================================================
-// VNC Client — Multithreaded & Optimized Version
-// ============================================================================
-//
-// NEW OPTIMIZATIONS:
-// 15. THREADING: Dedicated Network Thread for blocking socket recv() & decompression.
-// 16. MEMORY: Double-buffered framebuffers (Front/Back) to prevent tearing and 
-//             allow simultaneous rendering and decoding without blocking.
-// 17. SYNC: Mutex & Atomic flags for safe, low-latency cross-thread state transfer.
-//
-// ============================================================================
-
-#include <algorithm>
+﻿#include <algorithm>
 #include <codecvt>
 #include <EGL/egl.h>
 #include <filesystem>
@@ -27,6 +15,7 @@
 #include <thread>
 #include <mutex>
 #include <atomic>
+#include <deque>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_easyfont.h"
@@ -63,7 +52,7 @@ int recv_timed(SOCKET s, char* buf, int len, int flags, FrameTimings& timings) {
 }
 
 // ============================================================================
-// [OPT 16] Double Buffered Persistent Memory
+// Double Buffered Persistent Memory
 // ============================================================================
 struct PersistentBuffers {
     char* frontBuffer;      // Render thread reads from here
@@ -121,6 +110,8 @@ int g_sharedFbH = 0;
 int g_sharedFinalH = 0;
 FrameTimings g_sharedTimings;
 
+// Tracks total frames decoded over the lifetime of the app
+std::atomic<uint64_t> g_vncFramesDecoded{ 0 };
 
 // --- GLES globals ---
 GLuint programObject;
@@ -201,7 +192,7 @@ const char ZLIB_ENCODING[] = { 2,0,0,2, 0,0,0,6, 0,0,0,0 };
 int windowWidth = 800;
 int windowHeight = 480;
 
-const char* VNC_SERVER_IP_ADDRESS = "192.168.1.198";
+const char* VNC_SERVER_IP_ADDRESS = "192.168.1.112";
 const int VNC_SERVER_PORT = 5900;
 
 // --- Windows Helpers ---
@@ -360,10 +351,6 @@ bool parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth,
     return true;
 }
 
-
-// ============================================================================
-// NETWORK THREAD: Handles all blocking socket I/O & Decompression
-// ============================================================================
 // ============================================================================
 // NETWORK THREAD: Handles all blocking socket I/O & Decompression
 // ============================================================================
@@ -387,7 +374,6 @@ void NetworkThreadFunc() {
         setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
         setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
 
-        // Helper to cleanly close the socket and prepare for loop restart
         auto abort_connection = [&]() {
             closesocket(sockfd);
             g_currentSocket = INVALID_SOCKET;
@@ -430,6 +416,8 @@ void NetworkThreadFunc() {
                 break; // Disconnected or error, break inner loop to reconnect
             }
 
+            g_vncFramesDecoded++; // Increment total decoded frames
+
             // Sync with Render Thread: Swap Front/Back Buffers
             {
                 std::lock_guard<std::mutex> lock(g_frameMutex);
@@ -442,11 +430,9 @@ void NetworkThreadFunc() {
             }
         }
 
-        // Clean up when the inner loop breaks before restarting the outer loop
         abort_connection();
     }
 }
-
 
 // Text Rendering...
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
@@ -544,6 +530,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     double fps = 0.0;
     auto lastFpsTime = Clock::now();
 
+    // Sliding Window State for VNC FPS Calculation
+    std::deque<std::chrono::time_point<Clock>> vncFrameTimes;
+    uint64_t lastVncDecodedCount = 0;
+
     FrameTimings displayTimings = {}; // Holds timings for current frame
 
     MSG msg;
@@ -559,13 +549,34 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         double textureUploadMs = 0.0;
         int renderFbW = 0, renderFinalH = 0;
 
+        // --- Calculate Sliding Window VNC FPS ---
+        uint64_t currentDecoded = g_vncFramesDecoded.load();
+        uint64_t newFrames = currentDecoded - lastVncDecodedCount;
+        lastVncDecodedCount = currentDecoded;
+
+        auto currentLoopTime = Clock::now();
+
+        // Add a timestamp for every new frame decoded since the last render loop
+        for (uint64_t i = 0; i < newFrames; i++) {
+            vncFrameTimes.push_back(currentLoopTime);
+        }
+
+        // Remove timestamps older than 1000 ms (1 second)
+        while (!vncFrameTimes.empty() && GetDurationMs(vncFrameTimes.front(), currentLoopTime) > 1000.0) {
+            vncFrameTimes.pop_front();
+        }
+
+        // The current VNC FPS is exactly how many frames arrived in the last 1000 ms
+        double renderVncFps = static_cast<double>(vncFrameTimes.size());
+
+
         // --- Critical Section: Check for new frame and upload ---
         if (g_newFrameReady) {
             std::lock_guard<std::mutex> lock(g_frameMutex);
 
             renderFbW = g_sharedFbW;
             renderFinalH = g_sharedFinalH;
-            displayTimings = g_sharedTimings; // Grab latest network thread metrics
+            displayTimings = g_sharedTimings;
 
             auto texStart = Clock::now();
             if (firstFrame || renderFbW != prevFbW || renderFinalH != prevFinalH) {
@@ -619,12 +630,13 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         char overlayText[512];
         snprintf(overlayText, sizeof(overlayText),
-            "FPS: %.1f\nFrame: %.2f ms\nRecv: %.2f ms\nInflate: %.2f ms\nParse: %.2f ms\nGPU Up: %.2f ms",
-            fps, displayTimings.total_frame_ms, displayTimings.recv_ms, displayTimings.inflate_ms,
+            "Render FPS: %.1f\nVNC FPS: %.1f\nFrame: %.2f ms\nRecv: %.2f ms\nInflate: %.2f ms\nParse: %.2f ms\nGPU Up: %.2f ms",
+            fps, renderVncFps, displayTimings.total_frame_ms, displayTimings.recv_ms, displayTimings.inflate_ms,
             displayTimings.parse_ms, textureUploadMs);
 
         glUseProgram(programObjectTextRender);
-        print_string(-380, 220, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
+        // Position moved up slightly to accommodate the extra VNC FPS line
+        print_string(-380, 240, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
 
         eglSwapBuffers(eglDisplay, eglSurface);
 
