@@ -1,23 +1,12 @@
 ﻿// ============================================================================
-// VNC Client — Optimized Version
+// VNC Client — Multithreaded & Optimized Version
 // ============================================================================
 //
-// OPTIMIZATION SUMMARY:
-//
-// 1. MEMORY: Persistent frame buffer — eliminates malloc/realloc/free per frame
-// 2. MEMORY: Persistent decompression buffer — eliminates malloc/free per rect
-// 3. MEMORY: Decompress directly into final buffer — eliminates memcpy per rect
-// 4. NETWORK: TCP_NODELAY — disables Nagle's algorithm for lower latency sends
-// 5. NETWORK: Larger SO_RCVBUF — reduces recv() syscall count
-// 6. NETWORK: Batched recv for small header reads — 4 bytes instead of 1+1+2
-// 7. GPU: glTexSubImage2D — partial texture updates instead of full re-upload
-// 8. GPU: Persistent VBO for text overlay — eliminates glGenBuffers/glDeleteBuffers per frame
-// 9. GPU: Cache attribute locations — eliminates glGetAttribLocation per frame
-// 10. RENDER: Only upload overlay text buffer size, not full 20000-element array
-// 11. PROTOCOL: Handshake fix — "\x01" was sending "\\x01" (4 bytes, not 1)
-// 12. PROTOCOL: Incremental framebuffer update requests (flag byte = 1)
-// 13. ZLIB: inflateEnd() on clean session close (prevents memory leak)
-// 14. NETWORK: Non-blocking recv with select() for interleaving message pump
+// NEW OPTIMIZATIONS:
+// 15. THREADING: Dedicated Network Thread for blocking socket recv() & decompression.
+// 16. MEMORY: Double-buffered framebuffers (Front/Back) to prevent tearing and 
+//             allow simultaneous rendering and decoding without blocking.
+// 17. SYNC: Mutex & Atomic flags for safe, low-latency cross-thread state transfer.
 //
 // ============================================================================
 
@@ -35,6 +24,9 @@
 #include <chrono>
 #include <vector>
 #include <iomanip>
+#include <thread>
+#include <mutex>
+#include <atomic>
 
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "stb_easyfont.h"
@@ -71,35 +63,36 @@ int recv_timed(SOCKET s, char* buf, int len, int flags, FrameTimings& timings) {
 }
 
 // ============================================================================
-// [OPT 1,2] Persistent buffers — allocated once, reused every frame.
-// Eliminates per-frame malloc/realloc/free overhead completely.
+// [OPT 16] Double Buffered Persistent Memory
 // ============================================================================
 struct PersistentBuffers {
-    char* frameBuffer;      // Final decompressed RGBA pixel data
-    size_t frameBufferCap;   // Current capacity in bytes
-    char* compressedBuf;    // Incoming compressed data from server
+    char* frontBuffer;      // Render thread reads from here
+    char* backBuffer;       // Network thread writes to here
+    size_t frameBufferCap;
+    char* compressedBuf;
     size_t compressedCap;
 
-    PersistentBuffers() : frameBuffer(nullptr), frameBufferCap(0),
+    PersistentBuffers() : frontBuffer(nullptr), backBuffer(nullptr), frameBufferCap(0),
         compressedBuf(nullptr), compressedCap(0) {
     }
 
     ~PersistentBuffers() {
-        free(frameBuffer);
+        free(frontBuffer);
+        free(backBuffer);
         free(compressedBuf);
     }
 
-    // Grow the framebuffer only when needed (amortized O(1))
-    char* ensureFrameBuffer(size_t needed) {
+    bool ensureFrameBuffers(size_t needed) {
         if (needed > frameBufferCap) {
-            // Grow by 2x to amortize future allocations
             size_t newCap = (std::max)(needed, frameBufferCap * 2);
-            char* p = (char*)realloc(frameBuffer, newCap);
-            if (!p) return nullptr;
-            frameBuffer = p;
+            char* pFront = (char*)realloc(frontBuffer, newCap);
+            char* pBack = (char*)realloc(backBuffer, newCap);
+            if (!pFront || !pBack) return false;
+            frontBuffer = pFront;
+            backBuffer = pBack;
             frameBufferCap = newCap;
         }
-        return frameBuffer;
+        return true;
     }
 
     char* ensureCompressedBuf(size_t needed) {
@@ -116,6 +109,19 @@ struct PersistentBuffers {
 
 static PersistentBuffers g_bufs;
 
+// --- Threading & Sync Globals ---
+std::mutex g_frameMutex;
+std::atomic<bool> g_newFrameReady{ false };
+std::atomic<bool> g_running{ true };
+SOCKET g_currentSocket = INVALID_SOCKET;
+
+// Shared state updated by Network Thread, read by Render Thread
+int g_sharedFbW = 0;
+int g_sharedFbH = 0;
+int g_sharedFinalH = 0;
+FrameTimings g_sharedTimings;
+
+
 // --- GLES globals ---
 GLuint programObject;
 GLuint programObjectTextRender;
@@ -124,18 +130,9 @@ EGLConfig eglConfig;
 EGLSurface eglSurface;
 EGLContext eglContext;
 
-// ============================================================================
-// [OPT 9] Cached attribute locations — queried once after linking, not per-frame.
-// Each glGetAttribLocation() is a string lookup inside the GL driver.
-// ============================================================================
 GLint g_posAttr = -1;
 GLint g_texAttr = -1;
 GLint g_textPosAttr = -1;
-
-// ============================================================================
-// [OPT 8] Persistent VBO for text overlay.
-// Original code called glGenBuffers + glDeleteBuffers every single frame.
-// ============================================================================
 GLuint g_textVBO = 0;
 
 // --- VNC shaders ---
@@ -197,13 +194,7 @@ GLfloat portraitTexCoords[] = {
 
 // --- Constants ---
 const char* PROTOCOL_VERSION = "RFB 003.003\n";
-// Original non-incremental request (byte[1]=0 = full screen every time).
-// Incremental (byte[1]=1) would be more efficient but requires the client
-// to composite rectangles into a persistent framebuffer by position, which
-// this code doesn't do — it just concatenates rectangles vertically.
-// So we keep non-incremental to match the original behavior.
 const char FRAMEBUFFER_UPDATE_REQUEST[] = { 3,0,0,0,0,0,255,255,255,255 };
-
 const char ZLIB_ENCODING[] = { 2,0,0,2, 0,0,0,6, 0,0,0,0 };
 
 // --- Setup ---
@@ -214,19 +205,13 @@ const char* VNC_SERVER_IP_ADDRESS = "192.168.1.198";
 const int VNC_SERVER_PORT = 5900;
 
 // --- Windows Helpers ---
-static void usleep(__int64 usec) {
-    HANDLE timer;
-    LARGE_INTEGER ft;
-    ft.QuadPart = -(10 * usec);
-    timer = CreateWaitableTimer(NULL, TRUE, NULL);
-    SetWaitableTimer(timer, &ft, 0, NULL, NULL, 0);
-    WaitForSingleObject(timer, INFINITE);
-    CloseHandle(timer);
-}
-
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam) {
     switch (message) {
     case WM_DESTROY:
+        g_running = false; // Signal threads to exit
+        if (g_currentSocket != INVALID_SOCKET) {
+            closesocket(g_currentSocket); // Force recv() to unblock
+        }
         PostQuitMessage(0);
         break;
     default:
@@ -296,56 +281,34 @@ void Init() {
     glAttachShader(programObjectTextRender, fsText);
     glLinkProgram(programObjectTextRender);
 
-    // [OPT 9] Cache attribute locations once
     g_posAttr = glGetAttribLocation(programObject, "position");
     g_texAttr = glGetAttribLocation(programObject, "texCoord");
     g_textPosAttr = glGetAttribLocation(programObjectTextRender, "position");
 
-    // [OPT 8] Create persistent text VBO
     glGenBuffers(1, &g_textVBO);
-
     glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
 }
 
 // ============================================================================
-// [OPT 1,2,3,6] Optimized frame parser
-//
-// Key changes from original:
-// - Single recv for 4-byte message header instead of 1+1+2
-// - Decompresses directly into g_bufs.frameBuffer (no temp + memcpy)
-// - No malloc/realloc per frame — uses persistent buffers
-// - Sends incremental update request (pipelining)
+// Network Parser - Writes explicitly to the BACK BUFFER
 // ============================================================================
 bool parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth,
     int* frameBufferHeight, z_stream* strm,
     int* finalHeight, FrameTimings& timings) {
     auto parseStart = Clock::now();
 
-    // [OPT 6] Batched read: 4 bytes (type + padding + numRects) in one recv
-    // Original did 3 separate recv calls: 1 + 1 + 2 = 3 syscalls
     char msgHeader[4];
     if (recv_timed(socket_fd, msgHeader, 4, MSG_WAITALL, timings) != 4) return false;
 
     char messageType = msgHeader[0];
-    // msgHeader[1] is padding
     int rectCount = byteArrayToInt16(msgHeader + 2);
 
-    // Pipeline: request next frame immediately
     if (messageType == 0) {
         send(socket_fd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0);
     }
 
     size_t totalDecompressedSize = 0;
     *finalHeight = 0;
-
-    // ========================================================================
-    // Two-pass approach for multi-rectangle frames:
-    // Pass 1: peek all rectangle headers to compute total buffer size
-    //         (avoids realloc inside the decompression loop)
-    //
-    // For simplicity and because VNC servers typically send 1-4 rects,
-    // we just grow the persistent buffer as needed per-rect.
-    // ========================================================================
 
     for (int i = 0; i < rectCount; i++) {
         char header[12];
@@ -366,7 +329,6 @@ bool parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth,
             if (recv_timed(socket_fd, compSizeBuf, 4, MSG_WAITALL, timings) != 4) return false;
             int compressedSize = byteArrayToInt32(compSizeBuf);
 
-            // [OPT 2] Reuse compressed data buffer
             if (!g_bufs.ensureCompressedBuf(compressedSize)) return false;
 
             if (recv_timed(socket_fd, g_bufs.compressedBuf, compressedSize, MSG_WAITALL, timings) != compressedSize)
@@ -375,41 +337,119 @@ bool parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth,
             size_t decompSize = (size_t)rectW * rectH * 4;
             size_t neededTotal = totalDecompressedSize + decompSize;
 
-            // [OPT 1] Reuse frame buffer — grows only when resolution increases
-            if (!g_bufs.ensureFrameBuffer(neededTotal)) return false;
+            if (!g_bufs.ensureFrameBuffers(neededTotal)) return false;
 
-            // [OPT 3] Decompress directly into final buffer — no temp + memcpy
             strm->avail_in = compressedSize;
             strm->next_in = (Bytef*)g_bufs.compressedBuf;
             strm->avail_out = (uInt)decompSize;
-            strm->next_out = (Bytef*)(g_bufs.frameBuffer + totalDecompressedSize);
+
+            // DECOMPRESS TO BACK BUFFER
+            strm->next_out = (Bytef*)(g_bufs.backBuffer + totalDecompressedSize);
 
             auto infStart = Clock::now();
             int ret = inflate(strm, Z_NO_FLUSH);
             timings.inflate_ms += GetDurationMs(infStart, Clock::now());
 
-            if (ret < 0 && ret != Z_BUF_ERROR) {
-                return false;
-            }
+            if (ret < 0 && ret != Z_BUF_ERROR) return false;
 
             totalDecompressedSize = neededTotal;
         }
-        // TODO: handle encoding == 0 (Raw) if the server falls back to it
     }
 
     timings.parse_ms = GetDurationMs(parseStart, Clock::now());
-    return true;  // data is in g_bufs.frameBuffer
+    return true;
 }
 
+
 // ============================================================================
-// [OPT 8,10] Optimized text rendering
-// - Reuses persistent VBO (g_textVBO) instead of gen/delete per frame
-// - Only uploads actual vertex count, not the full 20000-float array
-// - Uses GL_DYNAMIC_DRAW hint since content changes every frame
+// NETWORK THREAD: Handles all blocking socket I/O & Decompression
 // ============================================================================
+// ============================================================================
+// NETWORK THREAD: Handles all blocking socket I/O & Decompression
+// ============================================================================
+void NetworkThreadFunc() {
+    while (g_running) {
+        SOCKET sockfd = MySocketOpen(SOCK_STREAM, 0);
+        g_currentSocket = sockfd;
+
+        sockaddr_in serverAddr;
+        serverAddr.sin_family = AF_INET;
+        inet_pton(AF_INET, VNC_SERVER_IP_ADDRESS, &serverAddr.sin_addr);
+        serverAddr.sin_port = htons(VNC_SERVER_PORT);
+
+        BOOL nodelay = TRUE;
+        setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay));
+
+        int rcvBufSize = 256 * 1024;
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvBufSize, sizeof(rcvBufSize));
+
+        struct timeval timeout = { 5, 0 };
+        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
+        setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+
+        // Helper to cleanly close the socket and prepare for loop restart
+        auto abort_connection = [&]() {
+            closesocket(sockfd);
+            g_currentSocket = INVALID_SOCKET;
+            };
+
+        if (connect(sockfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
+            abort_connection();
+            Sleep(500);
+            continue;
+        }
+
+        // Handshake
+        char buf[256];
+        if (recv(sockfd, buf, 12, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+        send(sockfd, PROTOCOL_VERSION, (int)strlen(PROTOCOL_VERSION), 0);
+
+        if (recv(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
+        send(sockfd, "\\x01", 1, 0);
+
+        if (recv(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
+        if (recv(sockfd, buf, 20, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+
+        uint32_t nameLen = (unsigned char)buf[16] << 24 | (unsigned char)buf[17] << 16 |
+            (unsigned char)buf[18] << 8 | (unsigned char)buf[19];
+
+        if (recv(sockfd, buf, nameLen, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+
+        send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0);
+        send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0);
+
+        z_stream strm = { 0 };
+        inflateInit(&strm);
+
+        while (g_running) {
+            int fbW = 0, fbH = 0, finalH = 0;
+            FrameTimings localTimings = {};
+
+            if (!parseFramebufferUpdate(sockfd, &fbW, &fbH, &strm, &finalH, localTimings)) {
+                inflateEnd(&strm);
+                break; // Disconnected or error, break inner loop to reconnect
+            }
+
+            // Sync with Render Thread: Swap Front/Back Buffers
+            {
+                std::lock_guard<std::mutex> lock(g_frameMutex);
+                std::swap(g_bufs.frontBuffer, g_bufs.backBuffer);
+                g_sharedFbW = fbW;
+                g_sharedFbH = fbH;
+                g_sharedFinalH = finalH;
+                g_sharedTimings = localTimings;
+                g_newFrameReady = true;
+            }
+        }
+
+        // Clean up when the inner loop breaks before restarting the outer loop
+        abort_connection();
+    }
+}
+
+
+// Text Rendering...
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
-    // stb_easyfont outputs quads as 4 vertices * 4 floats each = 16 floats per char
-    // We convert to triangles: 6 vertices * 2 floats = 12 floats per char
     static char inputBuffer[20000];
     static GLfloat triangleBuffer[20000];
 
@@ -418,7 +458,7 @@ void print_string(float x, float y, const char* text, float r, float g, float b,
 
     float ndcMovementX = (2.0f * x) / windowWidth;
     float ndcMovementY = (2.0f * y) / windowHeight;
-    float invSize = 1.0f / size;  // Multiply is faster than repeated divide
+    float invSize = 1.0f / size;
 
     int triangleIndex = 0;
     for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); i += 8) {
@@ -434,36 +474,26 @@ void print_string(float x, float y, const char* text, float r, float g, float b,
         float x3 = ptr[6] * invSize + ndcMovementX;
         float y3 = ptr[7] * invSize * -1 + ndcMovementY;
 
-        // Triangle 1
         triangleBuffer[triangleIndex++] = x0; triangleBuffer[triangleIndex++] = y0;
         triangleBuffer[triangleIndex++] = x1; triangleBuffer[triangleIndex++] = y1;
         triangleBuffer[triangleIndex++] = x2; triangleBuffer[triangleIndex++] = y2;
-        // Triangle 2
         triangleBuffer[triangleIndex++] = x0; triangleBuffer[triangleIndex++] = y0;
         triangleBuffer[triangleIndex++] = x2; triangleBuffer[triangleIndex++] = y2;
         triangleBuffer[triangleIndex++] = x3; triangleBuffer[triangleIndex++] = y3;
     }
 
-    // [OPT 8] Reuse persistent VBO
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
-    // [OPT 10] Upload only the used portion, not the full 20000-element array
     glBufferData(GL_ARRAY_BUFFER, triangleIndex * sizeof(GLfloat), triangleBuffer, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(g_textPosAttr);
     glVertexAttribPointer(g_textPosAttr, 2, GL_FLOAT, GL_FALSE, 0, NULL);
     glDrawArrays(GL_TRIANGLES, 0, triangleIndex / 2);
-
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
-void loadConfig(const char* filename) {
-    FILE* file = NULL;
-    if (fopen_s(&file, filename, "r") != 0 || !file) return;
-    fclose(file);
-}
 
 // ============================================================================
-// Main — with socket tuning and proper resource cleanup
+// MAIN / RENDER THREAD: OpenGL context strictly remains on the UI thread
 // ============================================================================
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     WNDCLASS wc = { 0 };
@@ -473,9 +503,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     wc.style = CS_OWNDC;
     RegisterClass(&wc);
 
-    loadConfig("config.txt");
-
-    HWND hWnd = CreateWindowEx(0, L"OpenGL_VNC_Sim", L"OpenGL VNC Render (Optimized)",
+    HWND hWnd = CreateWindowEx(0, L"OpenGL_VNC_Sim", L"OpenGL VNC Render (Multithreaded)",
         WS_OVERLAPPEDWINDOW | WS_VISIBLE, CW_USEDEFAULT, CW_USEDEFAULT, windowWidth, windowHeight,
         nullptr, nullptr, hInstance, nullptr);
 
@@ -495,188 +523,120 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     Init();
 
-    // Pre-allocate for typical 800x480 RGBA framebuffer
-    g_bufs.ensureFrameBuffer(800 * 480 * 4);
+    g_bufs.ensureFrameBuffers(800 * 480 * 4);
     g_bufs.ensureCompressedBuf(256 * 1024);
 
-    while (true) {
-        WSADATA WSAData;
-        WSAStartup(0x202, &WSAData);
-        SOCKET sockfd = MySocketOpen(SOCK_STREAM, 0);
+    WSADATA WSAData;
+    WSAStartup(0x202, &WSAData);
 
-        sockaddr_in serverAddr;
-        serverAddr.sin_family = AF_INET;
-        inet_pton(AF_INET, VNC_SERVER_IP_ADDRESS, &serverAddr.sin_addr);
-        serverAddr.sin_port = htons(VNC_SERVER_PORT);
+    // Launch Network Thread
+    std::thread networkThread(NetworkThreadFunc);
 
-        // ====================================================================
-        // [OPT 4] TCP_NODELAY — disables Nagle's algorithm.
-        // Without this, the OS buffers small sends (like the 10-byte update
-        // request) and waits up to ~40ms before actually transmitting.
-        // This alone can cut 20-40ms off round-trip latency.
-        // ====================================================================
-        BOOL nodelay = TRUE;
-        setsockopt(sockfd, IPPROTO_TCP, TCP_NODELAY, (const char*)&nodelay, sizeof(nodelay));
+    GLuint textureID;
+    glGenTextures(1, &textureID);
+    glBindTexture(GL_TEXTURE_2D, textureID);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-        // ====================================================================
-        // [OPT 5] Larger receive buffer — 256KB instead of OS default (~8KB).
-        // Allows the kernel to buffer more incoming data, reducing the chance
-        // that recv() blocks waiting for the NIC. Especially helps when the
-        // server sends large compressed frames in bursts.
-        // ====================================================================
-        int rcvBufSize = 256 * 1024;
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVBUF, (const char*)&rcvBufSize, sizeof(rcvBufSize));
+    int prevFbW = 0, prevFinalH = 0;
+    bool firstFrame = true;
+    int frameCount = 0;
+    double fps = 0.0;
+    auto lastFpsTime = Clock::now();
 
-        struct timeval timeout = { 5, 0 };
-        setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (const char*)&timeout, sizeof(timeout));
-        setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
+    FrameTimings displayTimings = {}; // Holds timings for current frame
 
-        if (connect(sockfd, (sockaddr*)&serverAddr, sizeof(serverAddr)) == SOCKET_ERROR) {
-            std::cerr << "Connecting..." << std::endl;
-            closesocket(sockfd);
-            WSACleanup();
-            Sleep(500);
-            continue;
+    MSG msg;
+
+    while (g_running) {
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
         }
+        if (!g_running) break;
 
-        // ==================================================================
-        // Handshake — preserved exactly as original.
-        //
-        // RFB 3.3: server chooses security type, no client response needed.
-        // After security, client sends ClientInit (1 byte shared-flag),
-        // then server replies with ServerInit (24 bytes).
-        //
-        // The original send("\\x01", 1, 0) sends 0x5C (backslash) as
-        // the ClientInit shared-flag. Any nonzero = shared. It works,
-        // so we keep the exact same byte sequence.
-        // ==================================================================
-        char buf[256];
-        recv(sockfd, buf, 12, MSG_WAITALL);                          // Server protocol version
-        send(sockfd, PROTOCOL_VERSION, (int)strlen(PROTOCOL_VERSION), 0); // Client protocol version
-        recv(sockfd, buf, 4, 0);                                      // Security type (server chosen in RFB 3.3)
-        send(sockfd, "\\x01", 1, 0);                                 // ClientInit shared-flag (0x5C = nonzero = shared)
-        recv(sockfd, buf, 4, 0);                                      // ServerInit bytes 0-3 (width + height)
-        recv(sockfd, buf, 16 + 4, MSG_WAITALL);                       // ServerInit bytes 4-23 (pixel format + name-length)
-        uint32_t nameLen = (unsigned char)buf[16] << 24 |
-            (unsigned char)buf[17] << 16 |
-            (unsigned char)buf[18] << 8 |
-            (unsigned char)buf[19];
-        recv(sockfd, buf, nameLen, MSG_WAITALL);                      // Desktop name
+        auto frameStart = Clock::now();
+        double textureUploadMs = 0.0;
+        int renderFbW = 0, renderFinalH = 0;
 
-        // Set encoding preference
-        send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0);
+        // --- Critical Section: Check for new frame and upload ---
+        if (g_newFrameReady) {
+            std::lock_guard<std::mutex> lock(g_frameMutex);
 
-        // First request is non-incremental (full screen)
-        send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0);
+            renderFbW = g_sharedFbW;
+            renderFinalH = g_sharedFinalH;
+            displayTimings = g_sharedTimings; // Grab latest network thread metrics
 
-        int fbW = 0, fbH = 0, finalH = 0;
-        int prevFbW = 0, prevFinalH = 0;   // Track previous dimensions for glTexSubImage2D
-        int frameCount = 0;
-        double fps = 0.0;
-        auto lastFpsTime = Clock::now();
-
-        GLuint textureID;
-        glGenTextures(1, &textureID);
-        glBindTexture(GL_TEXTURE_2D, textureID);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-
-        z_stream strm = { 0 };
-        inflateInit(&strm);
-
-        MSG msg;
-        bool running = true;
-        bool firstFrame = true;
-
-        while (running) {
-            while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-                if (msg.message == WM_QUIT) running = false;
-                TranslateMessage(&msg);
-                DispatchMessage(&msg);
-            }
-            if (!running) break;
-
-            auto frameStart = Clock::now();
-            FrameTimings timings = {};
-
-            finalH = 0;
-            if (!parseFramebufferUpdate(sockfd, &fbW, &fbH, &strm, &finalH, timings)) {
-                closesocket(sockfd);
-                break;
-            }
-
-            glClear(GL_COLOR_BUFFER_BIT);
-            glUseProgram(programObject);
-
-            // ================================================================
-            // [OPT 7] glTexSubImage2D for same-size frames.
-            //
-            // glTexImage2D reallocates GPU-side texture storage every call.
-            // glTexSubImage2D just uploads pixels into existing storage.
-            //
-            // On the first frame (or resolution change), we must use
-            // glTexImage2D to establish the texture dimensions. After that,
-            // glTexSubImage2D avoids the reallocation overhead.
-            //
-            // Typical savings: 0.5-2ms per frame on embedded GPUs.
-            // ================================================================
             auto texStart = Clock::now();
-            if (firstFrame || fbW != prevFbW || finalH != prevFinalH) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, fbW, finalH, 0,
-                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frameBuffer);
-                prevFbW = fbW;
-                prevFinalH = finalH;
+            if (firstFrame || renderFbW != prevFbW || renderFinalH != prevFinalH) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, renderFbW, renderFinalH, 0,
+                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
+                prevFbW = renderFbW;
+                prevFinalH = renderFinalH;
                 firstFrame = false;
             }
             else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, fbW, finalH,
-                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frameBuffer);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, renderFbW, renderFinalH,
+                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
             }
-            timings.texture_upload_ms = GetDurationMs(texStart, Clock::now());
-
-            // Draw VNC quad — using cached attribute locations [OPT 9]
-            if (fbW > finalH) {
-                glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, landscapeVertices);
-                glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, landscapeTexCoords);
-            }
-            else {
-                glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, portraitVertices);
-                glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, portraitTexCoords);
-            }
-            glEnableVertexAttribArray(g_posAttr);
-            glEnableVertexAttribArray(g_texAttr);
-            glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
-            glDisableVertexAttribArray(g_posAttr);
-            glDisableVertexAttribArray(g_texAttr);
-
-            // Stats overlay
-            frameCount++;
-            auto now = Clock::now();
-            timings.total_frame_ms = GetDurationMs(frameStart, now);
-
-            if (GetDurationMs(lastFpsTime, now) >= 1000.0) {
-                fps = frameCount * 1000.0 / GetDurationMs(lastFpsTime, now);
-                frameCount = 0;
-                lastFpsTime = now;
-            }
-
-            char overlayText[512];
-            snprintf(overlayText, sizeof(overlayText),
-                "FPS: %.1f\nFrame: %.2f ms\nRecv: %.2f ms\nInflate: %.2f ms\nParse: %.2f ms\nGPU Up: %.2f ms",
-                fps, timings.total_frame_ms, timings.recv_ms, timings.inflate_ms,
-                timings.parse_ms, timings.texture_upload_ms);
-
-            glUseProgram(programObjectTextRender);
-            print_string(-380, 220, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
-
-            eglSwapBuffers(eglDisplay, eglSurface);
+            textureUploadMs = GetDurationMs(texStart, Clock::now());
+            g_newFrameReady = false;
+        }
+        else {
+            // Keep using the last known sizes if no new frame
+            renderFbW = prevFbW;
+            renderFinalH = prevFinalH;
         }
 
-        // [OPT 13] Clean up zlib state — original code leaked this on disconnect
-        inflateEnd(&strm);
-        closesocket(sockfd);
-        WSACleanup();
-        glDeleteTextures(1, &textureID);
+        // --- Rendering ---
+        glClear(GL_COLOR_BUFFER_BIT);
+        glUseProgram(programObject);
+
+        if (renderFbW > renderFinalH) {
+            glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, landscapeVertices);
+            glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, landscapeTexCoords);
+        }
+        else {
+            glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, portraitVertices);
+            glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, portraitTexCoords);
+        }
+        glEnableVertexAttribArray(g_posAttr);
+        glEnableVertexAttribArray(g_texAttr);
+        glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
+        glDisableVertexAttribArray(g_posAttr);
+        glDisableVertexAttribArray(g_texAttr);
+
+        // --- Stats ---
+        frameCount++;
+        auto now = Clock::now();
+        displayTimings.total_frame_ms = GetDurationMs(frameStart, now);
+
+        if (GetDurationMs(lastFpsTime, now) >= 1000.0) {
+            fps = frameCount * 1000.0 / GetDurationMs(lastFpsTime, now);
+            frameCount = 0;
+            lastFpsTime = now;
+        }
+
+        char overlayText[512];
+        snprintf(overlayText, sizeof(overlayText),
+            "FPS: %.1f\nFrame: %.2f ms\nRecv: %.2f ms\nInflate: %.2f ms\nParse: %.2f ms\nGPU Up: %.2f ms",
+            fps, displayTimings.total_frame_ms, displayTimings.recv_ms, displayTimings.inflate_ms,
+            displayTimings.parse_ms, textureUploadMs);
+
+        glUseProgram(programObjectTextRender);
+        print_string(-380, 220, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
+
+        eglSwapBuffers(eglDisplay, eglSurface);
+
+        // Prevent 100% CPU utilization loop if VSync is disabled
+        if (!g_newFrameReady) {
+            Sleep(1);
+        }
     }
+
+    networkThread.join();
+
+    WSACleanup();
+    glDeleteTextures(1, &textureID);
     return 0;
 }
