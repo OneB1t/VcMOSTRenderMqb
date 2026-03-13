@@ -29,7 +29,7 @@
 #include "miniz.h"
 #include <time.h>
 
-// --- Timing ---
+// --- Timing & Bandwidth ---
 using Clock = std::chrono::high_resolution_clock;
 
 struct FrameTimings {
@@ -40,6 +40,9 @@ struct FrameTimings {
     double total_frame_ms = 0.0;
 };
 
+// Tracks total bytes received for bandwidth calculations
+std::atomic<uint64_t> g_totalBytesReceived{ 0 };
+
 static double GetDurationMs(Clock::time_point start, Clock::time_point end) {
     return std::chrono::duration<double, std::milli>(end - start).count();
 }
@@ -48,6 +51,9 @@ int recv_timed(SOCKET s, char* buf, int len, int flags, FrameTimings& timings) {
     auto start = Clock::now();
     int result = recv(s, buf, len, flags);
     timings.recv_ms += GetDurationMs(start, Clock::now());
+    if (result > 0) {
+        g_totalBytesReceived += result;
+    }
     return result;
 }
 
@@ -351,6 +357,13 @@ bool parseFramebufferUpdate(SOCKET socket_fd, int* frameBufferWidth,
     return true;
 }
 
+// Helper wrapper for initial handshake recvs to also count bytes
+int recv_and_count(SOCKET s, char* buf, int len, int flags) {
+    int res = recv(s, buf, len, flags);
+    if (res > 0) g_totalBytesReceived += res;
+    return res;
+}
+
 // ============================================================================
 // NETWORK THREAD: Handles all blocking socket I/O & Decompression
 // ============================================================================
@@ -387,19 +400,19 @@ void NetworkThreadFunc() {
 
         // Handshake
         char buf[256];
-        if (recv(sockfd, buf, 12, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+        if (recv_and_count(sockfd, buf, 12, MSG_WAITALL) <= 0) { abort_connection(); continue; }
         send(sockfd, PROTOCOL_VERSION, (int)strlen(PROTOCOL_VERSION), 0);
 
-        if (recv(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
-        send(sockfd, "\\x01", 1, 0);
+        if (recv_and_count(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
+        send(sockfd, "\x01", 1, 0);
 
-        if (recv(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
-        if (recv(sockfd, buf, 20, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+        if (recv_and_count(sockfd, buf, 4, 0) <= 0) { abort_connection(); continue; }
+        if (recv_and_count(sockfd, buf, 20, MSG_WAITALL) <= 0) { abort_connection(); continue; }
 
         uint32_t nameLen = (unsigned char)buf[16] << 24 | (unsigned char)buf[17] << 16 |
             (unsigned char)buf[18] << 8 | (unsigned char)buf[19];
 
-        if (recv(sockfd, buf, nameLen, MSG_WAITALL) <= 0) { abort_connection(); continue; }
+        if (recv_and_count(sockfd, buf, nameLen, MSG_WAITALL) <= 0) { abort_connection(); continue; }
 
         send(sockfd, ZLIB_ENCODING, sizeof(ZLIB_ENCODING), 0);
         send(sockfd, FRAMEBUFFER_UPDATE_REQUEST, sizeof(FRAMEBUFFER_UPDATE_REQUEST), 0);
@@ -536,6 +549,19 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
     FrameTimings displayTimings = {}; // Holds timings for current frame
 
+    // Accumulators and 1-second Average Variables
+    int vnc_frame_count = 0;
+    double sum_total_frame_ms = 0.0, avg_total_frame_ms = 0.0;
+    double sum_texture_up_ms = 0.0, avg_texture_up_ms = 0.0;
+    double sum_recv_ms = 0.0, avg_recv_ms = 0.0;
+    double sum_inflate_ms = 0.0, avg_inflate_ms = 0.0;
+    double sum_parse_ms = 0.0, avg_parse_ms = 0.0;
+
+    // Bandwidth State
+    uint64_t lastBytesReceived = 0;
+    double current_bandwidth_kbps = 0.0;
+    double current_bandwidth_mbps = 0.0;
+
     MSG msg;
 
     while (g_running) {
@@ -556,19 +582,15 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
         auto currentLoopTime = Clock::now();
 
-        // Add a timestamp for every new frame decoded since the last render loop
         for (uint64_t i = 0; i < newFrames; i++) {
             vncFrameTimes.push_back(currentLoopTime);
         }
 
-        // Remove timestamps older than 1000 ms (1 second)
         while (!vncFrameTimes.empty() && GetDurationMs(vncFrameTimes.front(), currentLoopTime) > 1000.0) {
             vncFrameTimes.pop_front();
         }
 
-        // The current VNC FPS is exactly how many frames arrived in the last 1000 ms
         double renderVncFps = static_cast<double>(vncFrameTimes.size());
-
 
         // --- Critical Section: Check for new frame and upload ---
         if (g_newFrameReady) {
@@ -591,10 +613,17 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                     GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
             }
             textureUploadMs = GetDurationMs(texStart, Clock::now());
+
+            // Accumulate VNC & Texture Upload stats for the 1-sec average
+            sum_texture_up_ms += textureUploadMs;
+            sum_recv_ms += displayTimings.recv_ms;
+            sum_inflate_ms += displayTimings.inflate_ms;
+            sum_parse_ms += displayTimings.parse_ms;
+            vnc_frame_count++;
+
             g_newFrameReady = false;
         }
         else {
-            // Keep using the last known sizes if no new frame
             renderFbW = prevFbW;
             renderFinalH = prevFinalH;
         }
@@ -620,27 +649,71 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         // --- Stats ---
         frameCount++;
         auto now = Clock::now();
-        displayTimings.total_frame_ms = GetDurationMs(frameStart, now);
 
-        if (GetDurationMs(lastFpsTime, now) >= 1000.0) {
-            fps = frameCount * 1000.0 / GetDurationMs(lastFpsTime, now);
+        // Accumulate Render Loop stats
+        double current_total_frame_ms = GetDurationMs(frameStart, now);
+        sum_total_frame_ms += current_total_frame_ms;
+
+        // --- 1-Second Update Block ---
+        double timeSinceLastFps = GetDurationMs(lastFpsTime, now);
+        if (timeSinceLastFps >= 1000.0) {
+            fps = frameCount * 1000.0 / timeSinceLastFps;
+
+            // Compute Bandwidth
+            uint64_t currentTotalBytes = g_totalBytesReceived.load();
+            uint64_t bytesThisSecond = currentTotalBytes - lastBytesReceived;
+            lastBytesReceived = currentTotalBytes;
+
+            double actualDurationSec = timeSinceLastFps / 1000.0;
+            current_bandwidth_kbps = (bytesThisSecond / 1024.0) / actualDurationSec;
+            current_bandwidth_mbps = ((bytesThisSecond * 8.0) / 1000000.0) / actualDurationSec; // Megabits
+
+            // Compute Averages
+            avg_total_frame_ms = frameCount > 0 ? (sum_total_frame_ms / frameCount) : 0.0;
+
+            if (vnc_frame_count > 0) {
+                avg_texture_up_ms = sum_texture_up_ms / vnc_frame_count;
+                avg_recv_ms = sum_recv_ms / vnc_frame_count;
+                avg_inflate_ms = sum_inflate_ms / vnc_frame_count;
+                avg_parse_ms = sum_parse_ms / vnc_frame_count;
+            }
+            else {
+                avg_texture_up_ms = 0.0;
+                avg_recv_ms = 0.0;
+                avg_inflate_ms = 0.0;
+                avg_parse_ms = 0.0;
+            }
+
+            // Reset accumulators for the next second
             frameCount = 0;
+            vnc_frame_count = 0;
+            sum_total_frame_ms = 0.0;
+            sum_texture_up_ms = 0.0;
+            sum_recv_ms = 0.0;
+            sum_inflate_ms = 0.0;
+            sum_parse_ms = 0.0;
+
             lastFpsTime = now;
         }
 
-        char overlayText[512];
+        char overlayText[1024];
         snprintf(overlayText, sizeof(overlayText),
-            "Render FPS: %.1f\nVNC FPS: %.1f\nFrame: %.2f ms\nRecv: %.2f ms\nInflate: %.2f ms\nParse: %.2f ms\nGPU Up: %.2f ms",
-            fps, renderVncFps, displayTimings.total_frame_ms, displayTimings.recv_ms, displayTimings.inflate_ms,
-            displayTimings.parse_ms, textureUploadMs);
+            "Render FPS: %.1f\n"
+            "VNC FPS: %.1f\n"
+            "Bandwidth: %.2f KB/s (%.2f Mbps)\n"
+            "Frame (Avg): %.2f ms\n"
+            "Recv (Avg): %.2f ms\n"
+            "Inflate (Avg): %.2f ms\n"
+            "Parse (Avg): %.2f ms\n"
+            "GPU Up (Avg): %.2f ms",
+            fps, renderVncFps, current_bandwidth_kbps, current_bandwidth_mbps,
+            avg_total_frame_ms, avg_recv_ms, avg_inflate_ms, avg_parse_ms, avg_texture_up_ms);
 
         glUseProgram(programObjectTextRender);
-        // Position moved up slightly to accommodate the extra VNC FPS line
         print_string(-380, 240, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
 
         eglSwapBuffers(eglDisplay, eglSurface);
 
-        // Prevent 100% CPU utilization loop if VSync is disabled
         if (!g_newFrameReady) {
             Sleep(1);
         }
