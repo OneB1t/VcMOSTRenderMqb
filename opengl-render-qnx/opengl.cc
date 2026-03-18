@@ -478,7 +478,8 @@ void* NetworkThreadFunc(void* arg) {
         setsockopt(sockfd, SOL_SOCKET, SO_SNDTIMEO, (const char*)&timeout, sizeof(timeout));
 
         if (connect(sockfd, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0 && errno != EINPROGRESS) {
-            close(sockfd); usleep(200000); continue;
+            close(sockfd); usleep(200000);
+            continue;
         }
 
         fd_set write_fds;
@@ -492,7 +493,7 @@ void* NetworkThreadFunc(void* arg) {
         if (getsockopt(sockfd, SOL_SOCKET, SO_ERROR, &so_error, &len) < 0 || so_error != 0) {
             close(sockfd); usleep(200000); continue;
         }
-
+    	execute_initial_commands();  // View OFF before connect (like old)
         fcntl(sockfd, F_SETFL, flags); // Restore blocking
 
         // ============================================================
@@ -533,6 +534,7 @@ void* NetworkThreadFunc(void* arg) {
         if (!handshake_ok) {
             close(sockfd);
             g_currentSocket = -1;
+        	execute_final_commands();  // View OFF before connect (like old)
             continue;
         }
 
@@ -566,6 +568,8 @@ void* NetworkThreadFunc(void* arg) {
         }
 
         close(sockfd);
+        execute_final_commands();  // View OFF before connect (like old)
+
         g_currentSocket = -1;
     }
     return NULL;
@@ -753,6 +757,5 @@ int main(int argc, char* argv[]) {
     pthread_join(networkThread, NULL);
 
     glDeleteTextures(1, &textureID);
-    execute_final_commands();
     return EXIT_SUCCESS;
 }
