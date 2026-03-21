@@ -449,46 +449,38 @@ void NetworkThreadFunc() {
 
 // Text Rendering...
 void print_string(float x, float y, const char* text, float r, float g, float b, float size) {
-    static char inputBuffer[20000];
-    static GLfloat triangleBuffer[20000];
+    static float inBuf[5000]; // 20000 bytes, naturally aligned for floats
+    static float triBuf[30000];
 
-    memset(inputBuffer, 0, sizeof(inputBuffer));
-    int number = stb_easy_font_print(0, 0, text, NULL, inputBuffer, sizeof(inputBuffer));
+    // stb_easy_font_print returns the exact number of quads generated
+    int quads = stb_easy_font_print(0, 0, (char*)text, nullptr, inBuf, sizeof(inBuf));
 
-    float ndcMovementX = (2.0f * x) / windowWidth;
-    float ndcMovementY = (2.0f * y) / windowHeight;
-    float invSize = 1.0f / size;
+    float ndcX = (2.0f * x) / windowWidth, ndcY = (2.0f * y) / windowHeight;
+    float invS = 1.0f / size, negInvS = -invS; // Precompute negation
+    int tIdx = 0;
 
-    int triangleIndex = 0;
-    for (int i = 0; i < sizeof(inputBuffer) / sizeof(GLfloat); i += 8) {
-        GLfloat* ptr = reinterpret_cast<GLfloat*>(&inputBuffer[i * sizeof(GLfloat)]);
-        if (ptr[0] == 0 && ptr[1] == 0 && ptr[2] == 0) break;
+    for (int i = 0; i < quads; i++) {
+        float* p = &inBuf[i * 8]; // 8 floats per quad
+        float x0 = p[0] * invS + ndcX, y0 = p[1] * negInvS + ndcY;
+        float x1 = p[2] * invS + ndcX, y1 = p[3] * negInvS + ndcY;
+        float x2 = p[4] * invS + ndcX, y2 = p[5] * negInvS + ndcY;
+        float x3 = p[6] * invS + ndcX, y3 = p[7] * negInvS + ndcY;
 
-        float x0 = ptr[0] * invSize + ndcMovementX;
-        float y0 = ptr[1] * invSize * -1 + ndcMovementY;
-        float x1 = ptr[2] * invSize + ndcMovementX;
-        float y1 = ptr[3] * invSize * -1 + ndcMovementY;
-        float x2 = ptr[4] * invSize + ndcMovementX;
-        float y2 = ptr[5] * invSize * -1 + ndcMovementY;
-        float x3 = ptr[6] * invSize + ndcMovementX;
-        float y3 = ptr[7] * invSize * -1 + ndcMovementY;
-
-        triangleBuffer[triangleIndex++] = x0; triangleBuffer[triangleIndex++] = y0;
-        triangleBuffer[triangleIndex++] = x1; triangleBuffer[triangleIndex++] = y1;
-        triangleBuffer[triangleIndex++] = x2; triangleBuffer[triangleIndex++] = y2;
-        triangleBuffer[triangleIndex++] = x0; triangleBuffer[triangleIndex++] = y0;
-        triangleBuffer[triangleIndex++] = x2; triangleBuffer[triangleIndex++] = y2;
-        triangleBuffer[triangleIndex++] = x3; triangleBuffer[triangleIndex++] = y3;
+        // Push 2 triangles (6 vertices = 12 floats) directly
+        float verts[] = { x0, y0, x1, y1, x2, y2, x0, y0, x2, y2, x3, y3 };
+        memcpy(&triBuf[tIdx], verts, sizeof(verts));
+        tIdx += 12;
     }
 
     glBindBuffer(GL_ARRAY_BUFFER, g_textVBO);
-    glBufferData(GL_ARRAY_BUFFER, triangleIndex * sizeof(GLfloat), triangleBuffer, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, tIdx * sizeof(float), triBuf, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(g_textPosAttr);
-    glVertexAttribPointer(g_textPosAttr, 2, GL_FLOAT, GL_FALSE, 0, NULL);
-    glDrawArrays(GL_TRIANGLES, 0, triangleIndex / 2);
+    glVertexAttribPointer(g_textPosAttr, 2, GL_FLOAT, GL_FALSE, 0, nullptr);
+    glDrawArrays(GL_TRIANGLES, 0, tIdx / 2);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
+
 
 
 // ============================================================================
@@ -507,12 +499,11 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         nullptr, nullptr, hInstance, nullptr);
 
     eglDisplay = eglGetDisplay(EGL_DEFAULT_DISPLAY);
-    EGLint maj, min;
+    EGLint maj, min, numConfigs;
     eglInitialize(eglDisplay, &maj, &min);
 
     EGLint config_attribs[] = { EGL_SURFACE_TYPE, EGL_WINDOW_BIT, EGL_RENDERABLE_TYPE, EGL_OPENGL_ES2_BIT, EGL_NONE };
     EGLConfig eglCfg;
-    EGLint numConfigs;
     eglChooseConfig(eglDisplay, config_attribs, &eglCfg, 1, &numConfigs);
 
     eglSurface = eglCreateWindowSurface(eglDisplay, eglCfg, hWnd, nullptr);
@@ -521,14 +512,12 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     eglMakeCurrent(eglDisplay, eglSurface, eglSurface, eglContext);
 
     Init();
-
     g_bufs.ensureFrameBuffers(800 * 480 * 4);
     g_bufs.ensureCompressedBuf(256 * 1024);
 
     WSADATA WSAData;
     WSAStartup(0x202, &WSAData);
 
-    // Launch Network Thread
     std::thread networkThread(NetworkThreadFunc);
 
     GLuint textureID;
@@ -538,32 +527,14 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
     int prevFbW = 0, prevFinalH = 0;
-    bool firstFrame = true;
-    int frameCount = 0;
-    double fps = 0.0;
+    int frameCount = 0, vnc_frame_count = 0;
+    double sum_total_ms = 0, sum_tex_ms = 0, sum_recv_ms = 0, sum_inflate_ms = 0, sum_parse_ms = 0;
+    char overlayText[512] = { 0 };
+
     auto lastFpsTime = Clock::now();
-
-    // Sliding Window State for VNC FPS Calculation
-    std::deque<std::chrono::time_point<Clock>> vncFrameTimes;
-    uint64_t lastVncDecodedCount = 0;
-
-    FrameTimings displayTimings = {}; // Holds timings for current frame
-
-    // Accumulators and 1-second Average Variables
-    int vnc_frame_count = 0;
-    double sum_total_frame_ms = 0.0, avg_total_frame_ms = 0.0;
-    double sum_texture_up_ms = 0.0, avg_texture_up_ms = 0.0;
-    double sum_recv_ms = 0.0, avg_recv_ms = 0.0;
-    double sum_inflate_ms = 0.0, avg_inflate_ms = 0.0;
-    double sum_parse_ms = 0.0, avg_parse_ms = 0.0;
-
-    // Bandwidth State
-    uint64_t lastBytesReceived = 0;
-    double current_bandwidth_kbps = 0.0;
-    double current_bandwidth_mbps = 0.0;
+    uint64_t lastVncDecoded = 0, lastBytesReceived = 0;
 
     MSG msg;
-
     while (g_running) {
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
             TranslateMessage(&msg);
@@ -572,155 +543,90 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         if (!g_running) break;
 
         auto frameStart = Clock::now();
-        double textureUploadMs = 0.0;
-        int renderFbW = 0, renderFinalH = 0;
+        int renderFbW = prevFbW, renderFinalH = prevFinalH;
 
-        // --- Calculate Sliding Window VNC FPS ---
-        uint64_t currentDecoded = g_vncFramesDecoded.load();
-        uint64_t newFrames = currentDecoded - lastVncDecodedCount;
-        lastVncDecodedCount = currentDecoded;
-
-        auto currentLoopTime = Clock::now();
-
-        for (uint64_t i = 0; i < newFrames; i++) {
-            vncFrameTimes.push_back(currentLoopTime);
-        }
-
-        while (!vncFrameTimes.empty() && GetDurationMs(vncFrameTimes.front(), currentLoopTime) > 1000.0) {
-            vncFrameTimes.pop_front();
-        }
-
-        double renderVncFps = static_cast<double>(vncFrameTimes.size());
-
-        // --- Critical Section: Check for new frame and upload ---
+        // --- Frame Update & Upload ---
         if (g_newFrameReady) {
             std::lock_guard<std::mutex> lock(g_frameMutex);
-
             renderFbW = g_sharedFbW;
             renderFinalH = g_sharedFinalH;
-            displayTimings = g_sharedTimings;
 
             auto texStart = Clock::now();
-            if (firstFrame || renderFbW != prevFbW || renderFinalH != prevFinalH) {
-                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, renderFbW, renderFinalH, 0,
-                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
+            if (!prevFbW || renderFbW != prevFbW || renderFinalH != prevFinalH) {
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, renderFbW, renderFinalH, 0, GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
                 prevFbW = renderFbW;
                 prevFinalH = renderFinalH;
-                firstFrame = false;
             }
             else {
-                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, renderFbW, renderFinalH,
-                    GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
+                glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, renderFbW, renderFinalH, GL_RGBA, GL_UNSIGNED_BYTE, g_bufs.frontBuffer);
             }
-            textureUploadMs = GetDurationMs(texStart, Clock::now());
 
-            // Accumulate VNC & Texture Upload stats for the 1-sec average
-            sum_texture_up_ms += textureUploadMs;
-            sum_recv_ms += displayTimings.recv_ms;
-            sum_inflate_ms += displayTimings.inflate_ms;
-            sum_parse_ms += displayTimings.parse_ms;
+            sum_tex_ms += GetDurationMs(texStart, Clock::now());
+            sum_recv_ms += g_sharedTimings.recv_ms;
+            sum_inflate_ms += g_sharedTimings.inflate_ms;
+            sum_parse_ms += g_sharedTimings.parse_ms;
             vnc_frame_count++;
-
             g_newFrameReady = false;
-        }
-        else {
-            renderFbW = prevFbW;
-            renderFinalH = prevFinalH;
         }
 
         // --- Rendering ---
         glClear(GL_COLOR_BUFFER_BIT);
         glUseProgram(programObject);
 
-        if (renderFbW > renderFinalH) {
-            glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, landscapeVertices);
-            glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, landscapeTexCoords);
-        }
-        else {
-            glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, portraitVertices);
-            glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, portraitTexCoords);
-        }
+        const float* verts = (renderFbW > renderFinalH) ? landscapeVertices : portraitVertices;
+        const float* texs = (renderFbW > renderFinalH) ? landscapeTexCoords : portraitTexCoords;
+
+        glVertexAttribPointer(g_posAttr, 3, GL_FLOAT, GL_FALSE, 0, verts);
+        glVertexAttribPointer(g_texAttr, 2, GL_FLOAT, GL_FALSE, 0, texs);
         glEnableVertexAttribArray(g_posAttr);
         glEnableVertexAttribArray(g_texAttr);
         glDrawArrays(GL_TRIANGLE_FAN, 0, 4);
         glDisableVertexAttribArray(g_posAttr);
         glDisableVertexAttribArray(g_texAttr);
 
-        // --- Stats ---
+        // --- Stats & 1-Second Updates ---
         frameCount++;
         auto now = Clock::now();
+        sum_total_ms += GetDurationMs(frameStart, now);
+        double elapsedMs = GetDurationMs(lastFpsTime, now);
 
-        // Accumulate Render Loop stats
-        double current_total_frame_ms = GetDurationMs(frameStart, now);
-        sum_total_frame_ms += current_total_frame_ms;
+        if (elapsedMs >= 1000.0) {
+            double elapsedSec = elapsedMs / 1000.0;
+            uint64_t curDecoded = g_vncFramesDecoded.load();
+            uint64_t curBytes = g_totalBytesReceived.load();
 
-        // --- 1-Second Update Block ---
-        double timeSinceLastFps = GetDurationMs(lastFpsTime, now);
-        if (timeSinceLastFps >= 1000.0) {
-            fps = frameCount * 1000.0 / timeSinceLastFps;
+            double fps = frameCount / elapsedSec;
+            double vncFps = (curDecoded - lastVncDecoded) / elapsedSec;
+            double bwKbps = ((curBytes - lastBytesReceived) / 1024.0) / elapsedSec;
+            double bwMbps = ((curBytes - lastBytesReceived) * 8.0 / 1000000.0) / elapsedSec;
 
-            // Compute Bandwidth
-            uint64_t currentTotalBytes = g_totalBytesReceived.load();
-            uint64_t bytesThisSecond = currentTotalBytes - lastBytesReceived;
-            lastBytesReceived = currentTotalBytes;
+            double avg_frame = frameCount ? sum_total_ms / frameCount : 0.0;
+            double avg_tex = vnc_frame_count ? sum_tex_ms / vnc_frame_count : 0.0;
+            double avg_recv = vnc_frame_count ? sum_recv_ms / vnc_frame_count : 0.0;
+            double avg_inf = vnc_frame_count ? sum_inflate_ms / vnc_frame_count : 0.0;
+            double avg_pars = vnc_frame_count ? sum_parse_ms / vnc_frame_count : 0.0;
 
-            double actualDurationSec = timeSinceLastFps / 1000.0;
-            current_bandwidth_kbps = (bytesThisSecond / 1024.0) / actualDurationSec;
-            current_bandwidth_mbps = ((bytesThisSecond * 8.0) / 1000000.0) / actualDurationSec; // Megabits
-
-            // Compute Averages
-            avg_total_frame_ms = frameCount > 0 ? (sum_total_frame_ms / frameCount) : 0.0;
-
-            if (vnc_frame_count > 0) {
-                avg_texture_up_ms = sum_texture_up_ms / vnc_frame_count;
-                avg_recv_ms = sum_recv_ms / vnc_frame_count;
-                avg_inflate_ms = sum_inflate_ms / vnc_frame_count;
-                avg_parse_ms = sum_parse_ms / vnc_frame_count;
-            }
-            else {
-                avg_texture_up_ms = 0.0;
-                avg_recv_ms = 0.0;
-                avg_inflate_ms = 0.0;
-                avg_parse_ms = 0.0;
-            }
-
-            // Reset accumulators for the next second
-            frameCount = 0;
-            vnc_frame_count = 0;
-            sum_total_frame_ms = 0.0;
-            sum_texture_up_ms = 0.0;
-            sum_recv_ms = 0.0;
-            sum_inflate_ms = 0.0;
-            sum_parse_ms = 0.0;
+            snprintf(overlayText, sizeof(overlayText),
+                "Render FPS: %.1f\nVNC FPS: %.1f\nBandwidth: %.2f KB/s (%.2f Mbps)\n"
+                "Frame (Avg): %.2f ms\nRecv (Avg): %.2f ms\nInflate (Avg): %.2f ms\n"
+                "Parse (Avg): %.2f ms\nGPU Up (Avg): %.2f ms",
+                fps, vncFps, bwKbps, bwMbps, avg_frame, avg_recv, avg_inf, avg_pars, avg_tex);
 
             lastFpsTime = now;
+            lastVncDecoded = curDecoded;
+            lastBytesReceived = curBytes;
+            frameCount = vnc_frame_count = 0;
+            sum_total_ms = sum_tex_ms = sum_recv_ms = sum_inflate_ms = sum_parse_ms = 0.0;
         }
-
-        char overlayText[1024];
-        snprintf(overlayText, sizeof(overlayText),
-            "Render FPS: %.1f\n"
-            "VNC FPS: %.1f\n"
-            "Bandwidth: %.2f KB/s (%.2f Mbps)\n"
-            "Frame (Avg): %.2f ms\n"
-            "Recv (Avg): %.2f ms\n"
-            "Inflate (Avg): %.2f ms\n"
-            "Parse (Avg): %.2f ms\n"
-            "GPU Up (Avg): %.2f ms",
-            fps, renderVncFps, current_bandwidth_kbps, current_bandwidth_mbps,
-            avg_total_frame_ms, avg_recv_ms, avg_inflate_ms, avg_parse_ms, avg_texture_up_ms);
 
         glUseProgram(programObjectTextRender);
-        print_string(-380, 240, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
+        if (overlayText[0]) print_string(-380, 240, overlayText, 1.0f, 1.0f, 0.0f, 80.0f);
 
         eglSwapBuffers(eglDisplay, eglSurface);
-
-        if (!g_newFrameReady) {
-            Sleep(1);
-        }
+        if (!g_newFrameReady) Sleep(1);
     }
 
     networkThread.join();
-
     WSACleanup();
     glDeleteTextures(1, &textureID);
     return 0;
