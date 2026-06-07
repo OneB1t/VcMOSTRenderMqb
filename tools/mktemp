@@ -1,0 +1,36 @@
+#!/bin/sh
+base="${TMPDIR:-/tmp}"
+make_dir=0
+dry_run=0
+template="tmp.XXXXXX"
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        -d) make_dir=1 ;;
+        -u) dry_run=1 ;;
+        -q|-t) ;;
+        -*) ;;
+        *) template="$1" ;;
+    esac
+    shift
+done
+
+prefix=$(echo "$template" | sed 's/X*$//')
+
+# Safely generate a 6-digit random number without using 'date'
+rand_val=$(awk 'BEGIN{srand(); printf "%06d", int(rand()*1000000)}')
+
+case "$prefix" in
+    /*) path="${prefix}$$-${rand_val}" ;;
+    *)  path="${base}/${prefix}$$-${rand_val}" ;;
+esac
+
+if [ "$dry_run" = "0" ]; then
+    if [ "$make_dir" = "1" ]; then
+        mkdir -p "$path" || exit 1
+    else
+        touch "$path" || exit 1
+    fi
+fi
+
+echo "$path"

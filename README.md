@@ -61,6 +61,11 @@ This software is able to show any VNC stream on virtual cockpit. Final compiled 
           cd /fs/sda0/
           ./opengl-render-qnx 10.10.10.2
  ```
+you can also override the TCP port as the second argument:
+```
+          cd /fs/sda0/
+          ./opengl-render-qnx 10.10.10.2 5900
+```
 7) VC: switch to navigation map and it should now show phone image
 
 When you want to get rid if this just restart your MIB2 device and everything is back to stock.
@@ -217,6 +222,11 @@ backgroundColor = 0.0 0.0 0.0 0.0
 windowWidth = 1010
 windowHeight = 376
 ```
+
+# Stream player
+
+A standalone stream player (plays any FFmpeg-supported stream) is available in `opengl-render-qnx-stream-player/`. See its README for build and usage instructions.
+
 # OLD WORK:
 
 To make this work you need to install Python3.3 to MIB2.5 first using following package repositories: https://pkgsrc.mibsolution.one then save current version of VCRenderData.py to sd card or upload it via winSCP

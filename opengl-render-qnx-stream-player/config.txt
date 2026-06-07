@@ -1,0 +1,64 @@
+landscapeVertices = -1.0 1.0 0.0 1.0 1.0 0.0 1.0 -1.0 0.0 -1.0 -1.0 0.0
+portraitVertices = -1.0 1.0 0.0 1.0 1.0 0.0 1.0 -1.0 0.0 -1.0 -1.0 0.0
+landscapeTexCoords = 0.0 0.0 1.0 0.0 1.0 1.0 0.0 1.0
+portraitTexCoords = 0.0 0.0 1.0 0.0 1.0 1.0 0.0 1.0
+backgroundColor = 0.0 0.0 0.0 1.0
+windowWidth = 800
+windowHeight = 480
+# Stream source URI — any FFmpeg-supported scheme (tcp://, rtsp://, udp://, etc.)
+streamUrl = tcp://192.168.3.1:12346
+
+# Decoder/render behavior
+dropFramesWhenBusy = 1
+# pixelPerfect: render video at 1:1 pixel scale, centered, with black bars around it
+pixelPerfect = 0
+
+# Verbose overlay placement and size (higher scale => smaller text)
+debugOverlay = 1
+debugOverlayMarginX = 16
+debugOverlayMarginY = 16
+debugOverlayScale = 110
+
+# FFmpeg input/open options — only applied when mpegOpenOptions=1.
+# Set mpegOpenOptions=0 to let FFmpeg use all defaults (higher latency, safer probing).
+mpegOpenOptions = 1
+# TCP socket read timeout in microseconds; triggers reconnect if no bytes arrive for this long.
+# Only fires on complete stream silence — slow IDR cadence alone does not trigger it.
+ffmpegRwTimeout = 5000000
+# Format flags for the FFmpeg demuxer (space-separated, any combination).
+#   nobuffer         AVFMT_FLAG_NOBUFFER: forward packets immediately, no internal buffer.
+#   genpts           AVFMT_FLAG_GENPTS: generate missing PTS from DTS.
+#   discardcorrupt   AVFMT_FLAG_DISCARD_CORRUPT: silently drop corrupt packets.
+# WARNING: nobuffer can break non-live sources (files, RTSP cameras). Disable if other streams fail.
+#ffmpegFflags = nobuffer
+# Additional format flags (space-separated, any combination).
+#   low_delay  AVFMT_FLAG_NOFILLIN: skip stream gap-filling for lower latency.
+# WARNING: low_delay can break non-live sources. Disable if other streams fail.
+#ffmpegFlags = low_delay
+# Bytes read when probing stream format during open; smaller = faster start.
+# Must be large enough to contain SPS/PPS NAL units (32768 = ~130 ms at 2 Mbps).
+# Safe to enable for all sources — only affects how much is read before decode starts.
+ffmpegProbeSize = 32768
+# Microseconds avformat_find_stream_info reads ahead to identify codecs.
+# 0 = stop as soon as probeSize bytes are consumed (fast start, assumes well-formed stream).
+# Default (comment out) = up to ~5 seconds of buffering for reliable codec detection.
+# Safe to enable for well-formed streams; disable if codec detection fails on your source.
+ffmpegAnalyzeDuration = 0
+
+# Nudge: after probing, open a brief second connection to the source to trigger
+# a fresh IDR on the decode connection before the decode loop starts.
+# Required for aa-proxy-rs which only sends IDR on new connections; the probe
+# phase consumes the first IDR, leaving the decode loop waiting up to ~177 s.
+# Only effective for tcp:// URLs; silently ignored for all other schemes.
+# Set to 0 to disable.
+ffmpegNudgeMs = 250
+
+# FFmpeg decoder options
+# Number of decode threads; 1 = lowest latency on constrained hardware.
+ffmpegThreadCount = 2
+# AV_CODEC_FLAG2_FAST: skip some loop filters for speed, minor quality tradeoff (0/1).
+ffmpegFastDecode = 1
+# Frame types to skip during decode: default | none | noref | bidir | nonkey | all.
+# default: decoder decides  none: decode everything  nonkey: skip all non-IDR frames.
+# all: skip all frames (useful for benchmarking pipeline overhead).
+ffmpegSkipFrame = default
